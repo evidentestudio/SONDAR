@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens extracted from sondar-design-guide.md — a "livro-caixa"
+ * (ledger) look: light paper, dark ink, one green accent. No gradients,
+ * no heavy shadows, no dark-mode variant (not part of the validated design).
+ */
+:root {
+  --paper: #f7f6f1;
+  --card: #ffffff;
+  --ink: #1e2a25;
+  --ink-soft: #4b5951;
+  --muted: #8a9089;
+  --accent: #2f6f5e;
+  --accent-light: #e4efe9;
+  --accent-dark: #1f4e42;
+  --border: #e2e0d6;
+  --border-strong: #cfccbe;
+
+  --rust: #b3542e;
+  --rust-light: #f5e4dc;
+  --reserve: #6b3fa0;
+  --reserve-light: #ebe2f5;
+
+  --status-green: #3b9b5c;
+  --status-yellow: #e0a526;
+  --status-red: #c94f3d;
+
+  --row-awaiting-bg: #fcdcdc;
+  --row-awaiting-text: #b3261e;
+  --row-blue-bg: #e2ebf7;
+  --row-blue-text: #2c5a8c;
+
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+  --font-mono: "Courier New", monospace;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-light: var(--accent-light);
+  --color-accent-dark: var(--accent-dark);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-rust: var(--rust);
+  --color-rust-light: var(--rust-light);
+  --color-reserve: var(--reserve);
+  --color-reserve-light: var(--reserve-light);
+
+  --color-status-green: var(--status-green);
+  --color-status-yellow: var(--status-yellow);
+  --color-status-red: var(--status-red);
+
+  --color-row-awaiting-bg: var(--row-awaiting-bg);
+  --color-row-awaiting-text: var(--row-awaiting-text);
+  --color-row-blue-bg: var(--row-blue-bg);
+  --color-row-blue-text: var(--row-blue-text);
+
+  --font-sans: var(--font-body);
+  --font-serif: var(--font-serif);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  font-family: var(--font-body);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-serif);
+}
+
+/* Every monetary value in the app must use this class — never the body font. */
+.money {
+  font-family: var(--font-mono);
+}
