@@ -22,7 +22,7 @@ para o schema completo (aplicado por inteiro desde a Etapa 0).
 
    ```bash
    npm install
-   npm run db:migrate   # aplica db/000_extensions.sql, db/sondar_schema.sql, db/001_auth.sql, em ordem
+   npm run db:migrate   # aplica db/000_extensions.sql, db/sondar_schema.sql, db/001_auth.sql, db/002_fix_month_totals_view.sql, em ordem
    npm run db:seed       # cria o household e os 2 usuários a partir do .env.local
    ```
 
@@ -51,6 +51,11 @@ para o schema completo (aplicado por inteiro desde a Etapa 0).
 - `db/001_auth.sql` — adiciona `users.password_hash`, único campo que o schema
   original não tinha e que o login básico da Etapa 0 precisa. Roda depois do
   schema.
+- `db/002_fix_month_totals_view.sql` — corrige a view `month_totals`: ela
+  fazia `JOIN categories` (inner), e como lançamento de crédito tem
+  `category_id = NULL` por definição do próprio schema, isso descartava todo
+  crédito da view em silêncio (`creditos_total` sempre voltava vazio). Troca
+  pra `LEFT JOIN` e agrupa por `e.household_id` em vez de `c.household_id`.
 
 ## Autenticação (Etapa 0)
 

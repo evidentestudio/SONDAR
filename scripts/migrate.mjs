@@ -22,6 +22,7 @@ const files = [
   "db/000_extensions.sql",
   "db/sondar_schema.sql",
   "db/001_auth.sql",
+  "db/002_fix_month_totals_view.sql",
 ];
 
 const args = [databaseUrl, "-v", "ON_ERROR_STOP=1"];
