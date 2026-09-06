@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f db/000_extensions.sql -f db/sondar_schema.sql -f db/001_auth.sql",
+    "db:migrate": "node scripts/migrate.mjs",
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
