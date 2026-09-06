@@ -9,6 +9,9 @@ import { Pool } from "pg";
 loadEnv({ path: ".env.local" });
 loadEnv();
 import { hashPassword } from "../src/lib/auth/password";
+// Dynamic import, not static: lib/db.ts reads process.env.DATABASE_URL at
+// module-eval time, and static imports are hoisted above the loadEnv() calls
+// above — a static import here would run before .env.local is loaded.
 
 type SeedUser = {
   email: string;
@@ -95,6 +98,13 @@ async function main() {
     }
 
     await client.query("COMMIT");
+
+    // Runs against the app's own pool (lib/db.ts), after commit, so the
+    // household row is visible. Idempotent — safe even if it already exists.
+    const { ensureAwaitingReviewCategory } = await import("../src/lib/categories/service");
+    await ensureAwaitingReviewCategory(householdId);
+    console.log(`Ensured "Aguardando Revisão" category for household ${householdId}`);
+
     console.log("Seed complete.");
   } catch (err) {
     await client.query("ROLLBACK");

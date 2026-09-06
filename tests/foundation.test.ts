@@ -1,5 +1,7 @@
 import { describe, expect, it, afterAll } from "vitest";
-import { pool } from "@/lib/db";
+import { getPool } from "@/lib/db";
+
+const pool = getPool();
 
 const EXPECTED_TABLES = [
   "users",

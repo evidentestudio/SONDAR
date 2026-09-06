@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { pool } from "@/lib/db";
+import { getPool } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { createSessionToken, verifySessionToken } from "@/lib/auth/session";
 import { authenticateWithPassword } from "@/lib/auth/authenticate";
+
+const pool = getPool();
 
 describe("senha", () => {
   it("faz round-trip de hash/verify", async () => {
