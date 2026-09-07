@@ -285,6 +285,7 @@ export function MonthView({
 
         {showAddEntry && (
           <EntryForm
+            month={month}
             leaves={leaves}
             paymentSources={paymentSources}
             onCancel={() => setShowAddEntry(false)}
@@ -479,11 +480,13 @@ function CategorySummaryRow({
 }
 
 function EntryForm({
+  month,
   leaves,
   paymentSources,
   onSubmit,
   onCancel,
 }: {
+  month: string;
   leaves: CategorySummaryNode[];
   paymentSources: PaymentSourceRow[];
   onSubmit: (input: {
@@ -497,7 +500,14 @@ function EntryForm({
   onCancel: () => void;
 }) {
   const [entryType, setEntryType] = useState<EntryType>("expense");
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  // Default to today only when today actually falls in the month being
+  // viewed — otherwise default to day 1 of that month. Always defaulting to
+  // "today" silently misfiled entries into the wrong month when adding one
+  // while browsing a different month than the current one.
+  const [entryDate, setEntryDate] = useState(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return todayIso.slice(0, 7) === month ? todayIso : `${month}-01`;
+  });
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -560,12 +570,11 @@ function EntryForm({
       <div className="flex flex-wrap gap-2">
         {entryType === "expense" && (
           <select
-            required
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}
             className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
           >
-            <option value="">Categoria...</option>
+            <option value="">Categoria... (em branco vai pra Aguardando Revisão)</option>
             {leaves.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}

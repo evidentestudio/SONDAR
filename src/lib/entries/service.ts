@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
+import { ensureAwaitingReviewCategory } from "@/lib/categories/service";
 
 export type EntryType = "expense" | "income";
 
@@ -84,7 +85,10 @@ export async function createEntry(
   let categoryId: string | null = input.categoryId ?? null;
 
   if (input.entryType === "expense") {
-    if (!categoryId) return { status: "error", message: "Categoria é obrigatória para despesas." };
+    // Manual entry without a chosen category falls back to "Aguardando
+    // Revisão" instead of blocking the save — same category the AI pipeline
+    // (Etapa 3) uses when it can't classify something confidently.
+    if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
 
     const { rows: catRows } = await db<{ id: string }>(
       `SELECT c.id FROM categories c
@@ -176,21 +180,22 @@ export async function updateEntry(
     sets.push(`entry_date = $${values.length}`);
   }
   if (input.categoryId !== undefined) {
+    let categoryId = input.categoryId;
     if (existing.entry_type === "expense") {
-      if (!input.categoryId) return { status: "error", message: "Categoria é obrigatória para despesas." };
+      if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
       const { rows: catRows } = await db<{ id: string }>(
         `SELECT c.id FROM categories c
          WHERE c.id = $1 AND c.household_id = $2 AND c.deleted_at IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM categories child WHERE child.parent_id = c.id AND child.deleted_at IS NULL
            )`,
-        [input.categoryId, householdId],
+        [categoryId, householdId],
       );
       if (!catRows[0]) {
         return { status: "error", message: "Categoria inválida — escolha uma categoria-folha." };
       }
     }
-    values.push(input.categoryId);
+    values.push(categoryId);
     sets.push(`category_id = $${values.length}`);
   }
   if (input.paymentSourceId !== undefined) {

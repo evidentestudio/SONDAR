@@ -1,12 +1,12 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { getPool } from "@/lib/db";
-import { createCategory } from "@/lib/categories/service";
+import { createCategory, ensureAwaitingReviewCategory } from "@/lib/categories/service";
 import { createEntry, listEntries } from "@/lib/entries/service";
 
 const pool = getPool();
 const MONTH = "2026-09";
 
-describe("lançamentos — regressão do bug de tipo do pg", () => {
+describe("lançamentos", () => {
   let householdId: string;
 
   beforeAll(async () => {
@@ -39,5 +39,22 @@ describe("lançamentos — regressão do bug de tipo do pg", () => {
     expect(entries).toHaveLength(1);
     expect(typeof entries[0].entry_date).toBe("string");
     expect(entries[0].entry_date.slice(0, 10)).toBe("2026-09-10");
+  });
+
+  it("despesa manual sem categoria escolhida cai em 'Aguardando Revisão' em vez de bloquear", async () => {
+    const awaitingReviewId = await ensureAwaitingReviewCategory(householdId);
+
+    const result = await createEntry(householdId, {
+      entryType: "expense",
+      entryDate: "2026-09-12",
+      description: "Sem categoria escolhida",
+      amount: 20,
+      categoryId: null,
+    });
+    expect(result.status).toBe("created");
+
+    const entries = await listEntries(householdId, MONTH);
+    const entry = entries.find((e) => e.description === "Sem categoria escolhida")!;
+    expect(entry.category_id).toBe(awaitingReviewId);
   });
 });
