@@ -5,7 +5,7 @@ import type { CategorySummaryNode } from "@/lib/budget-summary/service";
 import type { EntryRow, EntryType } from "@/lib/entries/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, parseBRLAmount } from "@/lib/format";
 
 type PaymentSourceTotal = { paymentSourceId: string; paymentSourceName: string; total: number };
 
@@ -97,7 +97,7 @@ export function MonthView({
   }
 
   async function submitBudget(categoryId: string, value: string) {
-    const amount = Number(value.replace(",", "."));
+    const amount = parseBRLAmount(value);
     if (!Number.isFinite(amount) || amount < 0) {
       setError("Valor de orçamento inválido.");
       return;
@@ -125,7 +125,7 @@ export function MonthView({
     paymentSourceId: string;
   }) {
     setError(null);
-    const amount = Number(input.amount.replace(",", "."));
+    const amount = parseBRLAmount(input.amount);
     const res = await fetch("/api/entries", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -6,3 +6,15 @@ const currencyFormatter = new Intl.NumberFormat("pt-BR", {
 export function formatBRL(amount: number): string {
   return currencyFormatter.format(amount);
 }
+
+/**
+ * Parses a monetary value typed in Brazilian format: "." is always a
+ * thousands separator, "," is always the decimal separator (e.g. "15.000,50"
+ * -> 15000.5, "15.000" -> 15000). A naive `.replace(",", ".")` gets the
+ * comma case right but leaves stray thousands dots in place, so "15.000"
+ * silently parses as 15 — a real bug found while testing Etapa 2.
+ */
+export function parseBRLAmount(input: string): number {
+  const cleaned = input.trim().replace(/\./g, "").replace(",", ".");
+  return Number(cleaned);
+}
