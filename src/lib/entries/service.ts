@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
-import { ensureAwaitingReviewCategory } from "@/lib/categories/service";
+import { ensureAwaitingReviewCategory, isLeafCategory } from "@/lib/categories/service";
 
 export type EntryType = "expense" | "income";
 
@@ -53,6 +53,9 @@ export async function listEntries(
   return rows;
 }
 
+export type InputMethod = "manual" | "ai_image" | "ai_text";
+export type ReviewStatus = "confirmed" | "needs_review" | "possible_duplicate";
+
 export type CreateEntryInput = {
   entryType: EntryType;
   entryDate: string; // YYYY-MM-DD
@@ -61,6 +64,8 @@ export type CreateEntryInput = {
   categoryId?: string | null;
   paymentSourceId?: string | null;
   createdBy?: string | null;
+  inputMethod?: InputMethod;
+  reviewStatus?: ReviewStatus;
 };
 
 export type CreateEntryResult =
@@ -90,15 +95,7 @@ export async function createEntry(
     // (Etapa 3) uses when it can't classify something confidently.
     if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
 
-    const { rows: catRows } = await db<{ id: string }>(
-      `SELECT c.id FROM categories c
-       WHERE c.id = $1 AND c.household_id = $2 AND c.deleted_at IS NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM categories child WHERE child.parent_id = c.id AND child.deleted_at IS NULL
-         )`,
-      [categoryId, householdId],
-    );
-    if (!catRows[0]) {
+    if (!(await isLeafCategory(householdId, categoryId))) {
       return {
         status: "error",
         message: "Categoria inválida — escolha uma categoria-folha (sem subcategorias).",
@@ -119,8 +116,8 @@ export async function createEntry(
 
   const { rows } = await db<{ id: string }>(
     `INSERT INTO financial_entries
-       (household_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', $8)
+       (household_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
     [
       householdId,
@@ -130,6 +127,8 @@ export async function createEntry(
       input.amount,
       categoryId,
       paymentSourceId,
+      input.inputMethod ?? "manual",
+      input.reviewStatus ?? "confirmed",
       input.createdBy ?? null,
     ],
   );
@@ -183,15 +182,7 @@ export async function updateEntry(
     let categoryId = input.categoryId;
     if (existing.entry_type === "expense") {
       if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
-      const { rows: catRows } = await db<{ id: string }>(
-        `SELECT c.id FROM categories c
-         WHERE c.id = $1 AND c.household_id = $2 AND c.deleted_at IS NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM categories child WHERE child.parent_id = c.id AND child.deleted_at IS NULL
-           )`,
-        [categoryId, householdId],
-      );
-      if (!catRows[0]) {
+      if (!(await isLeafCategory(householdId, categoryId))) {
         return { status: "error", message: "Categoria inválida — escolha uma categoria-folha." };
       }
     }
@@ -216,4 +207,29 @@ export async function deleteEntry(householdId: string, id: string): Promise<void
     `UPDATE financial_entries SET deleted_at = now() WHERE id = $1 AND household_id = $2`,
     [id, householdId],
   );
+}
+
+/**
+ * Per sondar-full-build-instructions.md section 3.6 — same category + amount
+ * (within a cent) in the same month. Never blocks saving, only flags for the
+ * "possível duplicidade" badge; the user decides.
+ */
+export async function checkPossibleDuplicate(
+  householdId: string,
+  categoryId: string,
+  amount: number,
+  entryDate: string,
+  excludeEntryId?: string,
+): Promise<boolean> {
+  const { rows } = await db(
+    `SELECT 1 FROM financial_entries
+     WHERE household_id = $1 AND category_id = $2
+       AND ABS(amount - $3) < 0.005
+       AND date_trunc('month', entry_date) = date_trunc('month', $4::date)
+       AND deleted_at IS NULL
+       AND ($5::uuid IS NULL OR id != $5)
+     LIMIT 1`,
+    [householdId, categoryId, amount, entryDate, excludeEntryId ?? null],
+  );
+  return rows.length > 0;
 }

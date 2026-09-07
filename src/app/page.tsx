@@ -37,6 +37,9 @@ export default async function Home() {
           <Link href="/notes" className="text-sm text-accent-dark hover:underline">
             Notas
           </Link>
+          <Link href="/merchant-rules" className="text-sm text-accent-dark hover:underline">
+            Regras
+          </Link>
         </div>
         <div className="flex items-center gap-4 text-sm text-ink-soft">
           <span>{session.displayName ?? session.email}</span>

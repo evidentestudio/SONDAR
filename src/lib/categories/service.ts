@@ -18,6 +18,19 @@ export type CategoryRow = {
 
 export type CategoryNode = CategoryRow & { children: CategoryNode[] };
 
+/** Only leaf categories may receive an entry/rule directly — never a group. */
+export async function isLeafCategory(householdId: string, categoryId: string): Promise<boolean> {
+  const { rows } = await db<{ id: string }>(
+    `SELECT c.id FROM categories c
+     WHERE c.id = $1 AND c.household_id = $2 AND c.deleted_at IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM categories child WHERE child.parent_id = c.id AND child.deleted_at IS NULL
+       )`,
+    [categoryId, householdId],
+  );
+  return rows.length > 0;
+}
+
 export async function getCategoryById(householdId: string, id: string): Promise<CategoryRow | null> {
   const { rows } = await db<CategoryRow>(
     `SELECT * FROM categories WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,

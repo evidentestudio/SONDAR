@@ -6,6 +6,7 @@ import type { EntryRow, EntryType } from "@/lib/entries/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
 import { formatBRL, parseBRLAmount } from "@/lib/format";
+import { ReviewModal } from "./review-modal";
 
 type PaymentSourceTotal = { paymentSourceId: string; paymentSourceName: string; total: number };
 
@@ -52,6 +53,7 @@ export function MonthView({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddEntry, setShowAddEntry] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const [editingBudget, setEditingBudget] = useState<{ id: string; value: string } | null>(null);
 
   const leaves = flattenLeafCategories(categories);
@@ -275,6 +277,13 @@ export function MonthView({
             </select>
             <button
               type="button"
+              onClick={() => setShowReview(true)}
+              className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+            >
+              Processar fatura
+            </button>
+            <button
+              type="button"
               onClick={() => setShowAddEntry((v) => !v)}
               className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
             >
@@ -339,6 +348,18 @@ export function MonthView({
           </div>
         )}
       </div>
+
+      {showReview && (
+        <ReviewModal
+          leaves={leaves}
+          paymentSources={paymentSources}
+          onClose={() => setShowReview(false)}
+          onSaved={() => {
+            loadSummary(month);
+            loadEntries(month, filterSource);
+          }}
+        />
+      )}
     </div>
   );
 }
