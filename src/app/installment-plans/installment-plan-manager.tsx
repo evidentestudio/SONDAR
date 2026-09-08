@@ -3,12 +3,16 @@
 import { useState } from "react";
 import type { InstallmentPlanRow } from "@/lib/installment-plans/service";
 import { formatBRL } from "@/lib/format";
+import { currentMonthKey, formatMonthLabel, nextMonthKey } from "@/lib/date";
 
 type PlanWithProgress = InstallmentPlanRow & { currentInstallmentNumber: number };
 
 export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWithProgress[] }) {
   const [plans, setPlans] = useState(initialPlans);
   const [error, setError] = useState<string | null>(null);
+  const [advanceMonth, setAdvanceMonth] = useState(nextMonthKey(currentMonthKey()));
+  const [advancing, setAdvancing] = useState(false);
+  const [advanceResult, setAdvanceResult] = useState<string | null>(null);
 
   async function cancelPlan(id: string) {
     setError(null);
@@ -21,6 +25,31 @@ export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWit
     setPlans((prev) => prev.filter((p) => p.id !== id));
   }
 
+  async function runAdvance() {
+    setError(null);
+    setAdvanceResult(null);
+    setAdvancing(true);
+    try {
+      const res = await fetch("/api/installment-plans/advance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: advanceMonth }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Não foi possível avançar.");
+        return;
+      }
+      setAdvanceResult(
+        data.created > 0
+          ? `${data.created} parcela(s) lançada(s) em ${formatMonthLabel(data.month)}. Veja em "Lançamentos", navegando até esse mês.`
+          : `Nenhuma parcela nova em ${formatMonthLabel(data.month)} (já lançada antes, ou nenhum plano ativo cai nesse mês).`,
+      );
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {error && (
@@ -28,6 +57,30 @@ export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWit
           {error}
         </div>
       )}
+
+      <div className="flex flex-col gap-2 rounded-xl border border-border-strong bg-card p-3">
+        <p className="text-xs text-muted">
+          Testar o avanço automático sem esperar o dia 1 do mês — isso cria de verdade a parcela
+          correspondente de cada parcelamento ativo, como se o mês escolhido já tivesse chegado.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="month"
+            value={advanceMonth}
+            onChange={(e) => setAdvanceMonth(e.target.value)}
+            className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+          />
+          <button
+            type="button"
+            disabled={advancing}
+            onClick={runAdvance}
+            className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark disabled:opacity-50"
+          >
+            {advancing ? "Avançando..." : "Avançar parcelas pra esse mês"}
+          </button>
+        </div>
+        {advanceResult && <p className="text-xs text-ink-soft">{advanceResult}</p>}
+      </div>
 
       <div className="flex flex-col rounded-xl border border-border bg-card">
         {plans.length === 0 && (
