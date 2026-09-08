@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { copyBudgetsFromPreviousMonth } from "@/lib/budgets/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 import { isValidMonthKey } from "@/lib/date";
 
 export async function POST(request: Request) {
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Mês inválido." }, { status: 400 });
   }
 
-  const result = await copyBudgetsFromPreviousMonth(session.householdId, month);
+  const ledgerId = await resolveLedgerId(session.householdId, body?.ledgerId);
+  const result = await copyBudgetsFromPreviousMonth(session.householdId, ledgerId, month);
   return NextResponse.json(result);
 }

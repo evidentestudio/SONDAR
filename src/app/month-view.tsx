@@ -1,22 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CategorySummaryNode } from "@/lib/budget-summary/service";
 import type { EntryRow, EntryType } from "@/lib/entries/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
+import type { LedgerRow } from "@/lib/ledgers/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
 import { formatBRL, parseBRLAmount } from "@/lib/format";
+import { fetchLedgerLeaves } from "@/lib/client/ledger-categories";
 import { ReviewModal } from "./review-modal";
 
 type PaymentSourceTotal = { paymentSourceId: string; paymentSourceName: string; total: number };
+type MonthTotals = { gastoTotal: number; creditosTotal: number };
+type LeafOption = { id: string; name: string };
 
-type Props = {
-  initialMonth: string;
-  initialCategories: CategorySummaryNode[];
-  initialTotals: { gastoTotal: number; creditosTotal: number };
-  initialPaymentSourceTotals: PaymentSourceTotal[];
-  initialEntries: EntryRow[];
-  paymentSources: PaymentSourceRow[];
+type LedgerData = {
+  categories: CategorySummaryNode[];
+  totals: MonthTotals;
+  paymentSourceTotals: PaymentSourceTotal[];
+  entries: EntryRow[];
 };
 
 function flattenLeafCategories(nodes: CategorySummaryNode[]): CategorySummaryNode[] {
@@ -36,19 +38,142 @@ function statusColor(gasto: number, orcado: number): string {
   return "var(--status-green)";
 }
 
-export function MonthView({
-  initialMonth,
-  initialCategories,
-  initialTotals,
-  initialPaymentSourceTotals,
-  initialEntries,
-  paymentSources,
-}: Props) {
+type Props = {
+  initialMonth: string;
+  ledgers: LedgerRow[];
+  defaultLedgerId: string;
+  initialData: LedgerData;
+  paymentSources: PaymentSourceRow[];
+};
+
+/**
+ * Etapa 3.5 — cada household tem um orçamento "Principal" (sempre expandido,
+ * único lugar com lançamento manual/processamento de fatura) e quantos
+ * suborçamentos paralelos o usuário quiser criar em /ledgers, cada um com
+ * sua própria árvore de categorias e totais, sem influenciar os demais.
+ * Suborçamentos vêm recolhidos por padrão — só carregam dados quando
+ * expandidos pela primeira vez, pra não pesar o carregamento inicial.
+ */
+export function MonthView({ initialMonth, ledgers, defaultLedgerId, initialData, paymentSources }: Props) {
   const [month, setMonth] = useState(initialMonth);
-  const [categories, setCategories] = useState(initialCategories);
-  const [totals, setTotals] = useState(initialTotals);
-  const [paymentSourceTotals, setPaymentSourceTotals] = useState(initialPaymentSourceTotals);
-  const [entries, setEntries] = useState(initialEntries);
+  const defaultLedger = ledgers.find((l) => l.id === defaultLedgerId) ?? ledgers[0];
+  const otherLedgers = ledgers.filter((l) => l.id !== defaultLedgerId);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMonth(previousMonthKey(month))}
+            className="min-h-11 min-w-11 rounded-lg border border-border-strong px-3"
+          >
+            ←
+          </button>
+          <h2 className="min-w-48 text-center font-serif text-lg text-ink">
+            {formatMonthLabel(month)}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setMonth(nextMonthKey(month))}
+            className="min-h-11 min-w-11 rounded-lg border border-border-strong px-3"
+          >
+            →
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMonth(nextMonthKey(month))}
+          className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+        >
+          Planejar próximo mês →
+        </button>
+      </div>
+
+      <LedgerPanel
+        ledgerId={defaultLedgerId}
+        ledgerName={defaultLedger?.name ?? "Principal"}
+        month={month}
+        ledgers={ledgers}
+        paymentSources={paymentSources}
+        initialData={initialData}
+        showEntryControls
+      />
+
+      {otherLedgers.map((ledger) => (
+        <CollapsibleLedgerPanel
+          key={ledger.id}
+          ledger={ledger}
+          month={month}
+          ledgers={ledgers}
+          paymentSources={paymentSources}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CollapsibleLedgerPanel({
+  ledger,
+  month,
+  ledgers,
+  paymentSources,
+}: {
+  ledger: LedgerRow;
+  month: string;
+  ledgers: LedgerRow[];
+  paymentSources: PaymentSourceRow[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="font-serif text-lg text-ink">{ledger.name}</span>
+        <span className="text-sm text-muted">{open ? "▲ recolher" : "▼ expandir"}</span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-6 border-t border-border p-4">
+          <LedgerPanel
+            ledgerId={ledger.id}
+            ledgerName={ledger.name}
+            month={month}
+            ledgers={ledgers}
+            paymentSources={paymentSources}
+            showEntryControls={false}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LedgerPanel({
+  ledgerId,
+  month,
+  ledgers,
+  paymentSources,
+  initialData,
+  showEntryControls,
+}: {
+  ledgerId: string;
+  ledgerName: string;
+  month: string;
+  ledgers: LedgerRow[];
+  paymentSources: PaymentSourceRow[];
+  initialData?: LedgerData;
+  showEntryControls: boolean;
+}) {
+  const [categories, setCategories] = useState<CategorySummaryNode[]>(initialData?.categories ?? []);
+  const [totals, setTotals] = useState<MonthTotals>(initialData?.totals ?? { gastoTotal: 0, creditosTotal: 0 });
+  const [paymentSourceTotals, setPaymentSourceTotals] = useState<PaymentSourceTotal[]>(
+    initialData?.paymentSourceTotals ?? [],
+  );
+  const [entries, setEntries] = useState<EntryRow[]>(initialData?.entries ?? []);
   const [filterSource, setFilterSource] = useState<string>("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -68,33 +193,44 @@ export function MonthView({
     categoryId: string;
     paymentSourceId: string;
   } | null>(null);
+  const skipNextLoad = useRef(!!initialData);
 
   const leaves = flattenLeafCategories(categories);
   const orcadoTotal = categories
     .filter((c) => c.categoryType === "normal")
     .reduce((s, c) => s + c.orcado, 0);
 
-  async function loadSummary(m: string) {
-    const res = await fetch(`/api/month-summary?month=${m}`);
-    const data = await res.json();
-    setCategories(data.categories ?? []);
-    setTotals(data.totals ?? { gastoTotal: 0, creditosTotal: 0 });
-    setPaymentSourceTotals(data.paymentSourceTotals ?? []);
-  }
+  const loadSummary = useCallback(
+    async (m: string) => {
+      const res = await fetch(`/api/month-summary?month=${m}&ledgerId=${ledgerId}`);
+      const data = await res.json();
+      setCategories(data.categories ?? []);
+      setTotals(data.totals ?? { gastoTotal: 0, creditosTotal: 0 });
+      setPaymentSourceTotals(data.paymentSourceTotals ?? []);
+    },
+    [ledgerId],
+  );
 
-  async function loadEntries(m: string, sourceId: string) {
-    const qs = new URLSearchParams({ month: m });
-    if (sourceId) qs.set("paymentSourceId", sourceId);
-    const res = await fetch(`/api/entries?${qs.toString()}`);
-    const data = await res.json();
-    setEntries(data.entries ?? []);
-  }
+  const loadEntries = useCallback(
+    async (m: string, sourceId: string) => {
+      const qs = new URLSearchParams({ month: m, ledgerId });
+      if (sourceId) qs.set("paymentSourceId", sourceId);
+      const res = await fetch(`/api/entries?${qs.toString()}`);
+      const data = await res.json();
+      setEntries(data.entries ?? []);
+    },
+    [ledgerId],
+  );
 
-  async function changeMonth(newMonth: string) {
-    setMonth(newMonth);
-    setError(null);
-    await Promise.all([loadSummary(newMonth), loadEntries(newMonth, filterSource)]);
-  }
+  useEffect(() => {
+    if (skipNextLoad.current) {
+      skipNextLoad.current = false;
+      return;
+    }
+    Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+    // filterSource intentionally excluded — changing it has its own handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledgerId, month, loadSummary, loadEntries]);
 
   async function changeFilterSource(sourceId: string) {
     setFilterSource(sourceId);
@@ -106,7 +242,7 @@ export function MonthView({
     await fetch("/api/budgets/copy-previous", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month }),
+      body: JSON.stringify({ month, ledgerId }),
     });
     await loadSummary(month);
   }
@@ -138,6 +274,7 @@ export function MonthView({
     amount: string;
     categoryId: string;
     paymentSourceId: string;
+    ledgerId: string;
   }) {
     setError(null);
     const amount = parseBRLAmount(input.amount);
@@ -151,6 +288,7 @@ export function MonthView({
         amount,
         categoryId: input.entryType === "expense" ? input.categoryId : null,
         paymentSourceId: input.paymentSourceId || null,
+        ledgerId: input.ledgerId,
       }),
     });
     if (!res.ok) {
@@ -159,7 +297,9 @@ export function MonthView({
       return;
     }
     setShowAddEntry(false);
-    await Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+    if (input.ledgerId === ledgerId) {
+      await Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+    }
   }
 
   async function removeEntry(id: string) {
@@ -213,34 +353,15 @@ export function MonthView({
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <>
       {error && (
         <div className="rounded-lg border border-rust bg-rust-light px-4 py-2 text-sm text-rust">
           {error}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => changeMonth(previousMonthKey(month))}
-            className="min-h-11 min-w-11 rounded-lg border border-border-strong px-3"
-          >
-            ←
-          </button>
-          <h2 className="min-w-48 text-center font-serif text-lg text-ink">
-            {formatMonthLabel(month)}
-          </h2>
-          <button
-            type="button"
-            onClick={() => changeMonth(nextMonthKey(month))}
-            className="min-h-11 min-w-11 rounded-lg border border-border-strong px-3"
-          >
-            →
-          </button>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      {showEntryControls && (
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={copyPreviousBudget}
@@ -248,15 +369,8 @@ export function MonthView({
           >
             Copiar orçamento do mês anterior
           </button>
-          <button
-            type="button"
-            onClick={() => changeMonth(nextMonthKey(month))}
-            className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
-          >
-            Planejar próximo mês →
-          </button>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <MetricCard label="Gasto do mês" value={totals.gastoTotal} />
@@ -284,27 +398,33 @@ export function MonthView({
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={() => setShowReview(true)}
-              className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
-            >
-              Processar fatura
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAddEntry((v) => !v)}
-              className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
-            >
-              + Novo lançamento
-            </button>
+            {showEntryControls && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowReview(true)}
+                  className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+                >
+                  Processar fatura
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddEntry((v) => !v)}
+                  className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
+                >
+                  + Novo lançamento
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         {showAddEntry && (
           <EntryForm
             month={month}
-            leaves={leaves}
+            initialLeaves={leaves}
+            ledgers={ledgers}
+            defaultLedgerId={ledgerId}
             paymentSources={paymentSources}
             onCancel={() => setShowAddEntry(false)}
             onSubmit={submitEntry}
@@ -503,7 +623,9 @@ export function MonthView({
 
       {showReview && (
         <ReviewModal
-          leaves={leaves}
+          ledgers={ledgers}
+          defaultLedgerId={ledgerId}
+          initialLeaves={leaves}
           paymentSources={paymentSources}
           onClose={() => setShowReview(false)}
           onSaved={() => {
@@ -512,7 +634,7 @@ export function MonthView({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -704,13 +826,17 @@ function CategorySummaryRow({
 
 function EntryForm({
   month,
-  leaves,
+  initialLeaves,
+  ledgers,
+  defaultLedgerId,
   paymentSources,
   onSubmit,
   onCancel,
 }: {
   month: string;
-  leaves: CategorySummaryNode[];
+  initialLeaves: LeafOption[];
+  ledgers: LedgerRow[];
+  defaultLedgerId: string;
   paymentSources: PaymentSourceRow[];
   onSubmit: (input: {
     entryType: EntryType;
@@ -719,6 +845,7 @@ function EntryForm({
     amount: string;
     categoryId: string;
     paymentSourceId: string;
+    ledgerId: string;
   }) => void;
   onCancel: () => void;
 }) {
@@ -733,14 +860,22 @@ function EntryForm({
   });
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [ledgerId, setLedgerId] = useState(defaultLedgerId);
+  const [leaves, setLeaves] = useState<LeafOption[]>(initialLeaves);
   const [categoryId, setCategoryId] = useState("");
   const [paymentSourceId, setPaymentSourceId] = useState("");
+
+  async function changeLedger(id: string) {
+    setLedgerId(id);
+    setCategoryId("");
+    setLeaves(id === defaultLedgerId ? initialLeaves : await fetchLedgerLeaves(id));
+  }
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit({ entryType, entryDate, description, amount, categoryId, paymentSourceId });
+        onSubmit({ entryType, entryDate, description, amount, categoryId, paymentSourceId, ledgerId });
       }}
       className="mb-4 flex flex-col gap-2 rounded-lg border border-border-strong bg-card p-3"
     >
@@ -791,6 +926,19 @@ function EntryForm({
       </div>
 
       <div className="flex flex-wrap gap-2">
+        {ledgers.length > 1 && (
+          <select
+            value={ledgerId}
+            onChange={(e) => changeLedger(e.target.value)}
+            className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+          >
+            {ledgers.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        )}
         {entryType === "expense" && (
           <select
             value={categoryId}

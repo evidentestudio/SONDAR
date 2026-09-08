@@ -5,6 +5,7 @@ import type { CategoryNode } from "@/lib/categories/service";
 
 type Props = {
   initialCategories: CategoryNode[];
+  ledgerId: string;
 };
 
 type PendingCreate = {
@@ -47,7 +48,7 @@ function rowBackground(node: CategoryNode): React.CSSProperties {
   return {};
 }
 
-export function CategoryManager({ initialCategories }: Props) {
+export function CategoryManager({ initialCategories, ledgerId }: Props) {
   const [categories, setCategories] = useState<CategoryNode[]>(initialCategories);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -60,7 +61,7 @@ export function CategoryManager({ initialCategories }: Props) {
   const [deleteState, setDeleteState] = useState<DeleteState | null>(null);
 
   async function refetch() {
-    const res = await fetch("/api/categories");
+    const res = await fetch(`/api/categories?ledgerId=${ledgerId}`);
     const data = await res.json();
     setCategories(data.categories ?? []);
   }
@@ -85,6 +86,7 @@ export function CategoryManager({ initialCategories }: Props) {
         parentId: pending.parentId,
         categoryType: pending.categoryType,
         confirmMerge,
+        ledgerId,
       }),
     });
 

@@ -5,6 +5,7 @@ import {
   getMonthTotals,
   getPaymentSourceTotals,
 } from "@/lib/budget-summary/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 import { isValidMonthKey, currentMonthKey } from "@/lib/date";
 
 export async function GET(request: Request) {
@@ -17,11 +18,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Mês inválido." }, { status: 400 });
   }
 
+  const ledgerId = await resolveLedgerId(session.householdId, searchParams.get("ledgerId"));
   const [categories, totals, paymentSourceTotals] = await Promise.all([
-    getCategoryMonthSummary(session.householdId, month),
-    getMonthTotals(session.householdId, month),
-    getPaymentSourceTotals(session.householdId, month),
+    getCategoryMonthSummary(session.householdId, ledgerId, month),
+    getMonthTotals(session.householdId, ledgerId, month),
+    getPaymentSourceTotals(session.householdId, ledgerId, month),
   ]);
 
-  return NextResponse.json({ month, categories, totals, paymentSourceTotals });
+  return NextResponse.json({ month, ledgerId, categories, totals, paymentSourceTotals });
 }

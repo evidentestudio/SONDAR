@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/auth/current";
 import { listLeafCategories } from "@/lib/categories/service";
 import { listMerchantRules } from "@/lib/merchant-rules/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 import { buildExtractionPrompt } from "@/lib/ai/prompt";
 import { extractFromImages, extractFromText } from "@/lib/ai/extract";
 import { processExtractedItems } from "@/lib/ai/pipeline";
@@ -20,19 +21,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "sourceType precisa ser 'image' ou 'text'." }, { status: 400 });
   }
 
-  const leaves = await listLeafCategories(session.householdId);
+  // The whole batch resolves against one ledger (default "Principal") —
+  // individual rows can still be moved to another ledger in the review
+  // screen, which re-resolves that row's category against the new ledger.
+  const ledgerId = await resolveLedgerId(session.householdId, body?.ledgerId);
+
+  const leaves = await listLeafCategories(session.householdId, ledgerId);
   const leafCategoryNames = leaves
     .filter((c) => c.category_type !== "awaiting_review")
     .map((c) => c.name);
 
   if (leafCategoryNames.length === 0) {
     return NextResponse.json(
-      { error: "Crie ao menos uma categoria antes de processar uma fatura." },
+      { error: "Crie ao menos uma categoria nesse orçamento antes de processar uma fatura." },
       { status: 400 },
     );
   }
 
-  const rules = await listMerchantRules(session.householdId);
+  const rules = (await listMerchantRules(session.householdId)).filter((r) => r.ledger_id === ledgerId);
   const merchantRules = rules
     .filter((r) => !r.is_ambiguous)
     .map((r) => ({ pattern: r.pattern, category: r.category_name }));
@@ -64,11 +70,11 @@ export async function POST(request: Request) {
       rawItems = await extractFromText(text, prompt);
     }
 
-    const items = await processExtractedItems(session.householdId, rawItems);
+    const items = await processExtractedItems(session.householdId, ledgerId, rawItems);
     const flaggedCount = items.filter((i) => i.needsReview || i.possibleDuplicate).length;
     await logExtraction(session.householdId, sourceType, items.length, flaggedCount, "claude-opus-5");
 
-    return NextResponse.json({ items });
+    return NextResponse.json({ items, ledgerId });
   } catch (err) {
     if (err instanceof Anthropic.APIError) {
       return NextResponse.json({ error: `Erro da IA: ${err.message}` }, { status: 502 });

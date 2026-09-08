@@ -7,6 +7,7 @@ const EXPECTED_TABLES = [
   "users",
   "households",
   "household_members",
+  "ledgers",
   "categories",
   "budgets",
   "payment_sources",
@@ -68,23 +69,31 @@ describe("Etapa 0 — fundação", () => {
       `INSERT INTO households (name) VALUES ('__test_household__') RETURNING id`,
     );
     const householdId = hh[0].id;
+    const { rows: ledger } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    const ledgerId = ledger[0].id;
     try {
       await pool.query(
-        `INSERT INTO categories (household_id, name) VALUES ($1, 'Mesada Papai')`,
-        [householdId],
+        `INSERT INTO categories (household_id, ledger_id, name) VALUES ($1, $2, 'Mesada Papai')`,
+        [householdId, ledgerId],
       );
       await expect(
-        pool.query(`INSERT INTO categories (household_id, name) VALUES ($1, 'MESADA PAPAI')`, [
+        pool.query(`INSERT INTO categories (household_id, ledger_id, name) VALUES ($1, $2, 'MESADA PAPAI')`, [
           householdId,
+          ledgerId,
         ]),
       ).rejects.toThrow();
       await expect(
-        pool.query(`INSERT INTO categories (household_id, name) VALUES ($1, 'mesadá papai')`, [
+        pool.query(`INSERT INTO categories (household_id, ledger_id, name) VALUES ($1, $2, 'mesadá papai')`, [
           householdId,
+          ledgerId,
         ]),
       ).rejects.toThrow();
     } finally {
       await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+      await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
       await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
     }
   });

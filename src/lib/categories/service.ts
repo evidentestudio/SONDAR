@@ -5,6 +5,7 @@ export type CategoryType = "normal" | "reserve" | "awaiting_review";
 export type CategoryRow = {
   id: string;
   household_id: string;
+  ledger_id: string;
   parent_id: string | null;
   name: string;
   name_normalized: string;
@@ -18,15 +19,24 @@ export type CategoryRow = {
 
 export type CategoryNode = CategoryRow & { children: CategoryNode[] };
 
-/** Only leaf categories may receive an entry/rule directly — never a group. */
-export async function isLeafCategory(householdId: string, categoryId: string): Promise<boolean> {
+/**
+ * Only leaf categories may receive an entry/rule directly — never a group.
+ * Also confirms the category belongs to the given ledger, since a category
+ * id alone no longer implies a single unambiguous scope (each ledger has
+ * its own independent category tree).
+ */
+export async function isLeafCategory(
+  householdId: string,
+  ledgerId: string,
+  categoryId: string,
+): Promise<boolean> {
   const { rows } = await db<{ id: string }>(
     `SELECT c.id FROM categories c
-     WHERE c.id = $1 AND c.household_id = $2 AND c.deleted_at IS NULL
+     WHERE c.id = $1 AND c.household_id = $2 AND c.ledger_id = $3 AND c.deleted_at IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM categories child WHERE child.parent_id = c.id AND child.deleted_at IS NULL
        )`,
-    [categoryId, householdId],
+    [categoryId, householdId, ledgerId],
   );
   return rows.length > 0;
 }
@@ -43,45 +53,47 @@ export async function getCategoryById(householdId: string, id: string): Promise<
  * Matches the exact normalization Postgres uses for categories.name_normalized
  * (lower(immutable_unaccent(name))) by asking Postgres itself, rather than
  * reimplementing accent-stripping in JS — one source of truth, no drift.
+ * Scoped per ledger — the same name can exist in two different ledgers
+ * (independent category trees), so household alone is no longer enough.
  */
 export async function findCanonicalCategory(
-  householdId: string,
+  ledgerId: string,
   name: string,
 ): Promise<CategoryRow | null> {
   const { rows } = await db<CategoryRow>(
     `SELECT * FROM categories
-     WHERE household_id = $1 AND deleted_at IS NULL
+     WHERE ledger_id = $1 AND deleted_at IS NULL
        AND name_normalized = lower(immutable_unaccent($2))`,
-    [householdId, name],
+    [ledgerId, name],
   );
   return rows[0] ?? null;
 }
 
-/** Creates the single system category every household needs, idempotently. */
-export async function ensureAwaitingReviewCategory(householdId: string): Promise<string> {
+/** Creates the single system category every ledger needs, idempotently. */
+export async function ensureAwaitingReviewCategory(householdId: string, ledgerId: string): Promise<string> {
   const { rows } = await db<{ id: string }>(
     `SELECT id FROM categories
-     WHERE household_id = $1 AND category_type = 'awaiting_review' AND deleted_at IS NULL
+     WHERE ledger_id = $1 AND category_type = 'awaiting_review' AND deleted_at IS NULL
      LIMIT 1`,
-    [householdId],
+    [ledgerId],
   );
   if (rows[0]) return rows[0].id;
 
   const { rows: created } = await db<{ id: string }>(
-    `INSERT INTO categories (household_id, name, category_type)
-     VALUES ($1, 'Aguardando Revisão', 'awaiting_review')
+    `INSERT INTO categories (household_id, ledger_id, name, category_type)
+     VALUES ($1, $2, 'Aguardando Revisão', 'awaiting_review')
      RETURNING id`,
-    [householdId],
+    [householdId, ledgerId],
   );
   return created[0].id;
 }
 
-export async function getCategoryTree(householdId: string): Promise<CategoryNode[]> {
+export async function getCategoryTree(householdId: string, ledgerId: string): Promise<CategoryNode[]> {
   const { rows } = await db<CategoryRow>(
     `SELECT * FROM categories
-     WHERE household_id = $1 AND deleted_at IS NULL
+     WHERE household_id = $1 AND ledger_id = $2 AND deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(name)) ASC`,
-    [householdId],
+    [householdId, ledgerId],
   );
 
   const byId = new Map<string, CategoryNode>();
@@ -104,16 +116,16 @@ export async function getCategoryTree(householdId: string): Promise<CategoryNode
 }
 
 /** Leaf categories only — the only ones allowed to receive entries directly. */
-export async function listLeafCategories(householdId: string): Promise<CategoryRow[]> {
+export async function listLeafCategories(householdId: string, ledgerId: string): Promise<CategoryRow[]> {
   const { rows } = await db<CategoryRow>(
     `SELECT c.* FROM categories c
-     WHERE c.household_id = $1 AND c.deleted_at IS NULL
+     WHERE c.household_id = $1 AND c.ledger_id = $2 AND c.deleted_at IS NULL
        AND NOT EXISTS (
          SELECT 1 FROM categories child
          WHERE child.parent_id = c.id AND child.deleted_at IS NULL
        )
      ORDER BY lower(immutable_unaccent(c.name)) ASC`,
-    [householdId],
+    [householdId, ledgerId],
   );
   return rows;
 }
@@ -135,6 +147,7 @@ export type CreateCategoryResult =
 
 export async function createCategory(
   householdId: string,
+  ledgerId: string,
   input: CreateCategoryInput,
 ): Promise<CreateCategoryResult> {
   const name = input.name.trim();
@@ -144,7 +157,9 @@ export async function createCategory(
 
   if (parentId) {
     const parent = await getCategoryById(householdId, parentId);
-    if (!parent) return { status: "error", message: "Categoria-mãe não encontrada." };
+    if (!parent || parent.ledger_id !== ledgerId) {
+      return { status: "error", message: "Categoria-mãe não encontrada." };
+    }
     if (parent.parent_id) {
       return {
         status: "error",
@@ -156,7 +171,7 @@ export async function createCategory(
   // Subcategories are always 'normal' — reserve/awaiting_review only make sense standalone.
   const categoryType: CategoryType = parentId ? "normal" : (input.categoryType ?? "normal");
 
-  const existing = await findCanonicalCategory(householdId, name);
+  const existing = await findCanonicalCategory(ledgerId, name);
 
   if (existing) {
     const existingIsTopLevel = existing.parent_id === null;
@@ -180,10 +195,10 @@ export async function createCategory(
   }
 
   const { rows } = await db<CategoryRow>(
-    `INSERT INTO categories (household_id, parent_id, name, category_type, color, icon)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO categories (household_id, ledger_id, parent_id, name, category_type, color, icon)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [householdId, parentId, name, categoryType, input.color ?? null, input.icon ?? null],
+    [householdId, ledgerId, parentId, name, categoryType, input.color ?? null, input.icon ?? null],
   );
   return { status: "created", category: rows[0] };
 }
@@ -212,7 +227,7 @@ export async function updateCategory(
   if (input.name !== undefined) {
     const trimmed = input.name.trim();
     if (!trimmed) return { status: "error", message: "Nome não pode ser vazio." };
-    const existing = await findCanonicalCategory(householdId, trimmed);
+    const existing = await findCanonicalCategory(category.ledger_id, trimmed);
     if (existing && existing.id !== id) {
       return { status: "error", message: `Já existe uma categoria chamada "${existing.name}".` };
     }

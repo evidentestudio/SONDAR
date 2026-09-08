@@ -27,14 +27,16 @@ export type CategorySummaryNode = {
 };
 
 /**
- * Categoria x gasto for a month, following services/budgetSummary.ts from
- * sondar-full-build-instructions.md section 3.4: a group's total is the sum
- * of its children PLUS any entries/budget still sitting directly on the
- * parent (orphaned when a category gains subcategories after already having
- * entries) — never just the children, or that amount silently disappears.
+ * Categoria x gasto for a month, scoped to one ledger, following
+ * services/budgetSummary.ts from sondar-full-build-instructions.md section
+ * 3.4: a group's total is the sum of its children PLUS any entries/budget
+ * still sitting directly on the parent (orphaned when a category gains
+ * subcategories after already having entries) — never just the children, or
+ * that amount silently disappears.
  */
 export async function getCategoryMonthSummary(
   householdId: string,
+  ledgerId: string,
   monthKey: string,
 ): Promise<CategorySummaryNode[]> {
   const monthStart = monthToDbDate(monthKey);
@@ -48,14 +50,14 @@ export async function getCategoryMonthSummary(
      LEFT JOIN (
        SELECT category_id, SUM(amount) AS gasto
        FROM financial_entries
-       WHERE household_id = $1 AND entry_type = 'expense' AND deleted_at IS NULL
-         AND entry_date >= $2::date AND entry_date < $3::date
+       WHERE household_id = $1 AND ledger_id = $2 AND entry_type = 'expense' AND deleted_at IS NULL
+         AND entry_date >= $3::date AND entry_date < $4::date
        GROUP BY category_id
      ) e ON e.category_id = c.id
-     LEFT JOIN budgets b ON b.category_id = c.id AND b.month = $2::date
-     WHERE c.household_id = $1 AND c.deleted_at IS NULL
+     LEFT JOIN budgets b ON b.category_id = c.id AND b.month = $3::date
+     WHERE c.household_id = $1 AND c.ledger_id = $2 AND c.deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(c.name)) ASC`,
-    [householdId, monthStart, monthEnd],
+    [householdId, ledgerId, monthStart, monthEnd],
   );
 
   type WorkingNode = Omit<CategorySummaryNode, "children"> & {
@@ -118,12 +120,14 @@ export async function getCategoryMonthSummary(
 
 export async function getMonthTotals(
   householdId: string,
+  ledgerId: string,
   monthKey: string,
 ): Promise<{ gastoTotal: number; creditosTotal: number }> {
   const monthDate = monthToDbDate(monthKey);
   const { rows } = await db<{ gasto_total: string | null; creditos_total: string | null }>(
-    `SELECT gasto_total, creditos_total FROM month_totals WHERE household_id = $1 AND month = $2::date`,
-    [householdId, monthDate],
+    `SELECT gasto_total, creditos_total FROM month_totals
+     WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date`,
+    [householdId, ledgerId, monthDate],
   );
   return {
     gastoTotal: Number(rows[0]?.gasto_total ?? 0),
@@ -139,15 +143,16 @@ export type PaymentSourceTotal = {
 
 export async function getPaymentSourceTotals(
   householdId: string,
+  ledgerId: string,
   monthKey: string,
 ): Promise<PaymentSourceTotal[]> {
   const monthDate = monthToDbDate(monthKey);
   const { rows } = await db<{ payment_source_id: string; payment_source_name: string; total: string }>(
     `SELECT payment_source_id, payment_source_name, total
      FROM payment_source_month_summary
-     WHERE household_id = $1 AND month = $2::date
+     WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date
      ORDER BY payment_source_name ASC`,
-    [householdId, monthDate],
+    [householdId, ledgerId, monthDate],
   );
   return rows.map((r) => ({
     paymentSourceId: r.payment_source_id,

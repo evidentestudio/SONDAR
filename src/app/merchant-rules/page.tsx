@@ -3,15 +3,27 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/current";
 import { listMerchantRules } from "@/lib/merchant-rules/service";
 import { listLeafCategories } from "@/lib/categories/service";
+import { ensureDefaultLedger, listLedgers } from "@/lib/ledgers/service";
 import { MerchantRuleManager } from "./merchant-rule-manager";
 
-export default async function MerchantRulesPage() {
+export default async function MerchantRulesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ledgerId?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/login");
 
+  await ensureDefaultLedger(session.householdId);
+  const ledgers = await listLedgers(session.householdId);
+  const { ledgerId: requestedLedgerId } = await searchParams;
+  const ledgerId = ledgers.some((l) => l.id === requestedLedgerId)
+    ? requestedLedgerId!
+    : (ledgers.find((l) => l.is_default) ?? ledgers[0]).id;
+
   const [rules, leaves] = await Promise.all([
     listMerchantRules(session.householdId),
-    listLeafCategories(session.householdId),
+    listLeafCategories(session.householdId, ledgerId),
   ]);
 
   return (
@@ -31,9 +43,25 @@ export default async function MerchantRulesPage() {
           Quando o nome do estabelecimento corresponder a um padrão aqui (tolerante a erro de
           grafia/acento), a categoria é aplicada automaticamente na extração por IA. Marque
           &ldquo;sempre ambíguo&rdquo; pra nomes que às vezes são uma coisa, às vezes outra — esses
-          nunca aplicam categoria sozinhos, sempre caem em Aguardando Revisão.
+          nunca aplicam categoria sozinhos, sempre caem em Aguardando Revisão. A categoria da regra
+          nova é escolhida dentro do orçamento selecionado abaixo — regras já existentes de outros
+          orçamentos continuam listadas, com o nome do orçamento ao lado.
         </p>
-        <MerchantRuleManager initialRules={rules} leaves={leaves} />
+        {ledgers.length > 1 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted">Categoria da nova regra em:</span>
+            {ledgers.map((l) => (
+              <Link
+                key={l.id}
+                href={`/merchant-rules?ledgerId=${l.id}`}
+                className={`rounded-full px-3 py-1 ${l.id === ledgerId ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
+              >
+                {l.name}
+              </Link>
+            ))}
+          </div>
+        )}
+        <MerchantRuleManager initialRules={rules} leaves={leaves} ledgerId={ledgerId} />
       </main>
     </div>
   );

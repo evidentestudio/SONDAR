@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createCategory, getCategoryTree } from "@/lib/categories/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
-  const tree = await getCategoryTree(session.householdId);
+  const { searchParams } = new URL(request.url);
+  const ledgerId = await resolveLedgerId(session.householdId, searchParams.get("ledgerId"));
+
+  const tree = await getCategoryTree(session.householdId, ledgerId);
   return NextResponse.json({ categories: tree });
 }
 
@@ -20,7 +24,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Nome não pode ser vazio." }, { status: 400 });
   }
 
-  const result = await createCategory(session.householdId, {
+  const ledgerId = await resolveLedgerId(session.householdId, body?.ledgerId);
+  const result = await createCategory(session.householdId, ledgerId, {
     name,
     parentId: typeof body?.parentId === "string" ? body.parentId : null,
     categoryType: body?.categoryType === "reserve" ? "reserve" : "normal",

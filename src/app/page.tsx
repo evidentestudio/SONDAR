@@ -7,6 +7,7 @@ import { currentMonthKey } from "@/lib/date";
 import { getCategoryMonthSummary, getMonthTotals, getPaymentSourceTotals } from "@/lib/budget-summary/service";
 import { listEntries } from "@/lib/entries/service";
 import { listPaymentSources } from "@/lib/payment-sources/service";
+import { ensureDefaultLedger, listLedgers } from "@/lib/ledgers/service";
 
 export default async function Home() {
   const session = await getSession();
@@ -15,11 +16,13 @@ export default async function Home() {
   }
 
   const month = currentMonthKey();
-  const [categories, totals, paymentSourceTotals, entries, paymentSources] = await Promise.all([
-    getCategoryMonthSummary(session.householdId, month),
-    getMonthTotals(session.householdId, month),
-    getPaymentSourceTotals(session.householdId, month),
-    listEntries(session.householdId, month),
+  const defaultLedgerId = await ensureDefaultLedger(session.householdId);
+  const [ledgers, categories, totals, paymentSourceTotals, entries, paymentSources] = await Promise.all([
+    listLedgers(session.householdId),
+    getCategoryMonthSummary(session.householdId, defaultLedgerId, month),
+    getMonthTotals(session.householdId, defaultLedgerId, month),
+    getPaymentSourceTotals(session.householdId, defaultLedgerId, month),
+    listEntries(session.householdId, defaultLedgerId, month),
     listPaymentSources(session.householdId),
   ]);
 
@@ -40,6 +43,9 @@ export default async function Home() {
           <Link href="/merchant-rules" className="text-sm text-accent-dark hover:underline">
             Regras
           </Link>
+          <Link href="/ledgers" className="text-sm text-accent-dark hover:underline">
+            Orçamentos
+          </Link>
         </div>
         <div className="flex items-center gap-4 text-sm text-ink-soft">
           <span>{session.displayName ?? session.email}</span>
@@ -50,10 +56,9 @@ export default async function Home() {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
         <MonthView
           initialMonth={month}
-          initialCategories={categories}
-          initialTotals={totals}
-          initialPaymentSourceTotals={paymentSourceTotals}
-          initialEntries={entries}
+          ledgers={ledgers}
+          defaultLedgerId={defaultLedgerId}
+          initialData={{ categories, totals, paymentSourceTotals, entries }}
           paymentSources={paymentSources}
         />
       </main>

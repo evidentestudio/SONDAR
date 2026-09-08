@@ -28,11 +28,15 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * sondar-full-build-instructions.md: "confiar cegamente na categoria que a
  * IA devolve" is listed as a mistake already made once) — a merchant rule,
  * when it matches, always wins over whatever the AI guessed; otherwise the
- * category name is resolved against the household's real categories via the
- * same normalization Postgres uses, never created fresh.
+ * category name is resolved against the target ledger's real categories via
+ * the same normalization Postgres uses, never created fresh. Every item in
+ * one extraction batch resolves against the same ledger (default
+ * "Principal"); moving an individual row to a different ledger happens in
+ * the review screen, which re-resolves that row's category itself.
  */
 export async function processExtractedItems(
   householdId: string,
+  ledgerId: string,
   rawItems: RawExtractedItem[],
 ): Promise<DraftEntry[]> {
   const results: DraftEntry[] = [];
@@ -48,7 +52,7 @@ export async function processExtractedItems(
     let categoryId: string | null = null;
     let categoryName = raw.category;
 
-    const ruleMatch = await findMatchingRule(householdId, raw.description);
+    const ruleMatch = await findMatchingRule(householdId, ledgerId, raw.description);
 
     if (ruleMatch.type === "matched") {
       categoryId = ruleMatch.categoryId;
@@ -58,8 +62,8 @@ export async function processExtractedItems(
       needsReview = true;
       categoryName = "Aguardando Revisão";
     } else {
-      const canonical = raw.category ? await findCanonicalCategory(householdId, raw.category) : null;
-      if (canonical && (await isLeafCategory(householdId, canonical.id))) {
+      const canonical = raw.category ? await findCanonicalCategory(ledgerId, raw.category) : null;
+      if (canonical && (await isLeafCategory(householdId, ledgerId, canonical.id))) {
         categoryId = canonical.id;
         categoryName = canonical.name;
       } else {

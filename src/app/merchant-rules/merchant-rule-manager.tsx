@@ -7,9 +7,11 @@ import type { CategoryRow } from "@/lib/categories/service";
 export function MerchantRuleManager({
   initialRules,
   leaves,
+  ledgerId,
 }: {
   initialRules: MerchantRuleRow[];
   leaves: CategoryRow[];
+  ledgerId: string;
 }) {
   const [rules, setRules] = useState(initialRules);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function MerchantRuleManager({
     const res = await fetch("/api/merchant-rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pattern, categoryId, isAmbiguous }),
+      body: JSON.stringify({ pattern, categoryId, isAmbiguous, ledgerId }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -58,6 +60,7 @@ export function MerchantRuleManager({
         pattern: editing.pattern,
         categoryId: editing.categoryId,
         isAmbiguous: editing.isAmbiguous,
+        ledgerId,
       }),
     });
     if (!res.ok) {
@@ -198,6 +201,9 @@ export function MerchantRuleManager({
                 <span className="font-medium text-ink">{rule.pattern}</span>
                 <span className="text-muted">→</span>
                 <span className="text-ink-soft">{rule.category_name}</span>
+                <span className="rounded-full border border-border-strong px-2 py-0.5 text-xs text-muted">
+                  {rule.ledger_name}
+                </span>
                 {rule.is_ambiguous && (
                   <span className="rounded-full bg-rust-light px-2 py-0.5 text-xs text-rust">
                     sempre ambíguo

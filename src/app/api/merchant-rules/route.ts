@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createMerchantRule, listMerchantRules } from "@/lib/merchant-rules/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 
 export async function GET() {
   const session = await getSession();
@@ -21,7 +22,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Padrão e categoria são obrigatórios." }, { status: 400 });
   }
 
-  const result = await createMerchantRule(session.householdId, {
+  const ledgerId = await resolveLedgerId(session.householdId, body?.ledgerId);
+  const result = await createMerchantRule(session.householdId, ledgerId, {
     pattern,
     categoryId,
     isAmbiguous: body?.isAmbiguous === true,

@@ -42,9 +42,10 @@ export async function setBudget(
   return { status: "set", budget: rows[0] };
 }
 
-/** Upserts every budgeted category from the previous month into monthKey. */
+/** Upserts every budgeted category from the previous month into monthKey, scoped to one ledger. */
 export async function copyBudgetsFromPreviousMonth(
   householdId: string,
+  ledgerId: string,
   monthKey: string,
 ): Promise<{ copied: number }> {
   const prevDate = monthToDbDate(previousMonthKey(monthKey));
@@ -52,12 +53,13 @@ export async function copyBudgetsFromPreviousMonth(
 
   const { rows } = await db(
     `INSERT INTO budgets (household_id, category_id, month, amount)
-     SELECT household_id, category_id, $3::date, amount
-     FROM budgets
-     WHERE household_id = $1 AND month = $2::date
+     SELECT b.household_id, b.category_id, $3::date, b.amount
+     FROM budgets b
+     JOIN categories c ON c.id = b.category_id
+     WHERE b.household_id = $1 AND c.ledger_id = $4 AND b.month = $2::date
      ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount, updated_at = now()
      RETURNING id`,
-    [householdId, prevDate, targetDate],
+    [householdId, prevDate, targetDate, ledgerId],
   );
   return { copied: rows.length };
 }

@@ -7,6 +7,7 @@ export type EntryType = "expense" | "income";
 export type EntryRow = {
   id: string;
   household_id: string;
+  ledger_id: string;
   entry_type: EntryType;
   entry_date: string;
   description: string;
@@ -22,13 +23,14 @@ export type EntryRow = {
 
 export async function listEntries(
   householdId: string,
+  ledgerId: string,
   monthKey: string,
   filters?: { paymentSourceId?: string },
 ): Promise<EntryRow[]> {
   const monthStart = monthToDbDate(monthKey);
   const monthEnd = monthToDbDate(nextMonthKey(monthKey));
 
-  const values: unknown[] = [householdId, monthStart, monthEnd];
+  const values: unknown[] = [householdId, ledgerId, monthStart, monthEnd];
   let paymentSourceClause = "";
   if (filters?.paymentSourceId) {
     values.push(filters.paymentSourceId);
@@ -37,15 +39,15 @@ export async function listEntries(
 
   const { rows } = await db<EntryRow>(
     `SELECT
-       e.id, e.household_id, e.entry_type, e.entry_date, e.description, e.amount,
+       e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
        e.category_id, c.name AS category_name,
        e.payment_source_id, ps.name AS payment_source_name,
        e.review_status, e.input_method, e.created_at
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
-     WHERE e.household_id = $1 AND e.deleted_at IS NULL
-       AND e.entry_date >= $2::date AND e.entry_date < $3::date
+     WHERE e.household_id = $1 AND e.ledger_id = $2 AND e.deleted_at IS NULL
+       AND e.entry_date >= $3::date AND e.entry_date < $4::date
        ${paymentSourceClause}
      ORDER BY e.entry_date DESC, e.created_at DESC`,
     values,
@@ -57,6 +59,7 @@ export type InputMethod = "manual" | "ai_image" | "ai_text";
 export type ReviewStatus = "confirmed" | "needs_review" | "possible_duplicate";
 
 export type CreateEntryInput = {
+  ledgerId: string;
   entryType: EntryType;
   entryDate: string; // YYYY-MM-DD
   description: string;
@@ -93,12 +96,12 @@ export async function createEntry(
     // Manual entry without a chosen category falls back to "Aguardando
     // Revisão" instead of blocking the save — same category the AI pipeline
     // (Etapa 3) uses when it can't classify something confidently.
-    if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
+    if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId, input.ledgerId);
 
-    if (!(await isLeafCategory(householdId, categoryId))) {
+    if (!(await isLeafCategory(householdId, input.ledgerId, categoryId))) {
       return {
         status: "error",
-        message: "Categoria inválida — escolha uma categoria-folha (sem subcategorias).",
+        message: "Categoria inválida — escolha uma categoria-folha (sem subcategorias) deste orçamento.",
       };
     }
   } else {
@@ -116,11 +119,12 @@ export async function createEntry(
 
   const { rows } = await db<{ id: string }>(
     `INSERT INTO financial_entries
-       (household_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
       householdId,
+      input.ledgerId,
       input.entryType,
       input.entryDate,
       description,
@@ -150,8 +154,8 @@ export async function updateEntry(
   id: string,
   input: UpdateEntryInput,
 ): Promise<UpdateEntryResult> {
-  const { rows: existingRows } = await db<{ id: string; entry_type: EntryType }>(
-    `SELECT id, entry_type FROM financial_entries WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
+  const { rows: existingRows } = await db<{ id: string; entry_type: EntryType; ledger_id: string }>(
+    `SELECT id, entry_type, ledger_id FROM financial_entries WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
   const existing = existingRows[0];
@@ -181,9 +185,12 @@ export async function updateEntry(
   if (input.categoryId !== undefined) {
     let categoryId = input.categoryId;
     if (existing.entry_type === "expense") {
-      if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId);
-      if (!(await isLeafCategory(householdId, categoryId))) {
-        return { status: "error", message: "Categoria inválida — escolha uma categoria-folha." };
+      if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId, existing.ledger_id);
+      if (!(await isLeafCategory(householdId, existing.ledger_id, categoryId))) {
+        return {
+          status: "error",
+          message: "Categoria inválida — escolha uma categoria-folha deste orçamento.",
+        };
       }
     }
     values.push(categoryId);
@@ -212,7 +219,8 @@ export async function deleteEntry(householdId: string, id: string): Promise<void
 /**
  * Per sondar-full-build-instructions.md section 3.6 — same category + amount
  * (within a cent) in the same month. Never blocks saving, only flags for the
- * "possível duplicidade" badge; the user decides.
+ * "possível duplicidade" badge; the user decides. Scoped by category, which
+ * already pins it to one ledger.
  */
 export async function checkPossibleDuplicate(
   householdId: string,

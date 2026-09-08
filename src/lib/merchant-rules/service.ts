@@ -9,16 +9,23 @@ export type MerchantRuleRow = {
   pattern_normalized: string;
   category_id: string;
   category_name: string;
+  ledger_id: string;
+  ledger_name: string;
   is_ambiguous: boolean;
   created_at: string;
   deleted_at: string | null;
 };
 
+const SELECT_RULE = `
+  SELECT mr.*, c.name AS category_name, c.ledger_id, l.name AS ledger_name
+  FROM merchant_rules mr
+  JOIN categories c ON c.id = mr.category_id
+  JOIN ledgers l ON l.id = c.ledger_id
+`;
+
 export async function listMerchantRules(householdId: string): Promise<MerchantRuleRow[]> {
   const { rows } = await db<MerchantRuleRow>(
-    `SELECT mr.*, c.name AS category_name
-     FROM merchant_rules mr
-     JOIN categories c ON c.id = mr.category_id
+    `${SELECT_RULE}
      WHERE mr.household_id = $1 AND mr.deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(mr.pattern)) ASC`,
     [householdId],
@@ -31,9 +38,7 @@ async function findCanonicalRule(
   pattern: string,
 ): Promise<MerchantRuleRow | null> {
   const { rows } = await db<MerchantRuleRow>(
-    `SELECT mr.*, c.name AS category_name
-     FROM merchant_rules mr
-     JOIN categories c ON c.id = mr.category_id
+    `${SELECT_RULE}
      WHERE mr.household_id = $1 AND mr.deleted_at IS NULL
        AND mr.pattern_normalized = lower(immutable_unaccent($2))`,
     [householdId, pattern],
@@ -47,12 +52,13 @@ export type CreateMerchantRuleResult =
 
 export async function createMerchantRule(
   householdId: string,
+  ledgerId: string,
   input: { pattern: string; categoryId: string; isAmbiguous?: boolean },
 ): Promise<CreateMerchantRuleResult> {
   const pattern = input.pattern.trim();
   if (!pattern) return { status: "error", message: "Padrão não pode ser vazio." };
 
-  if (!(await isLeafCategory(householdId, input.categoryId))) {
+  if (!(await isLeafCategory(householdId, ledgerId, input.categoryId))) {
     return { status: "error", message: "Categoria inválida — escolha uma categoria-folha." };
   }
 
@@ -68,11 +74,9 @@ export async function createMerchantRule(
     [householdId, pattern, input.categoryId, input.isAmbiguous ?? false],
   );
 
-  const [rule] = await db<MerchantRuleRow>(
-    `SELECT mr.*, c.name AS category_name FROM merchant_rules mr
-     JOIN categories c ON c.id = mr.category_id WHERE mr.id = $1`,
-    [rows[0].id],
-  ).then((r) => r.rows);
+  const [rule] = await db<MerchantRuleRow>(`${SELECT_RULE} WHERE mr.id = $1`, [rows[0].id]).then(
+    (r) => r.rows,
+  );
 
   return { status: "created", rule };
 }
@@ -84,7 +88,7 @@ export type UpdateMerchantRuleResult =
 export async function updateMerchantRule(
   householdId: string,
   id: string,
-  input: { pattern?: string; categoryId?: string; isAmbiguous?: boolean },
+  input: { pattern?: string; categoryId?: string; ledgerId?: string; isAmbiguous?: boolean },
 ): Promise<UpdateMerchantRuleResult> {
   const { rows: existingRows } = await db<{ id: string }>(
     `SELECT id FROM merchant_rules WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
@@ -106,7 +110,7 @@ export async function updateMerchantRule(
     sets.push(`pattern = $${values.length}`);
   }
   if (input.categoryId !== undefined) {
-    if (!(await isLeafCategory(householdId, input.categoryId))) {
+    if (!input.ledgerId || !(await isLeafCategory(householdId, input.ledgerId, input.categoryId))) {
       return { status: "error", message: "Categoria inválida — escolha uma categoria-folha." };
     }
     values.push(input.categoryId);
@@ -122,11 +126,7 @@ export async function updateMerchantRule(
     await db(`UPDATE merchant_rules SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
   }
 
-  const { rows } = await db<MerchantRuleRow>(
-    `SELECT mr.*, c.name AS category_name FROM merchant_rules mr
-     JOIN categories c ON c.id = mr.category_id WHERE mr.id = $1`,
-    [id],
-  );
+  const { rows } = await db<MerchantRuleRow>(`${SELECT_RULE} WHERE mr.id = $1`, [id]);
   return { status: "updated", rule: rows[0] };
 }
 
@@ -147,12 +147,18 @@ export type MerchantRuleMatch =
  * section 4: "aplique sempre que o nome do estabelecimento corresponder,
  * mesmo que outra categoria pareça plausível". Ambiguous rules never
  * auto-apply a category; they force the item into review instead.
+ *
+ * Scoped to one ledger: a rule whose category lives in a different ledger
+ * doesn't apply here — ledgers don't influence each other, so a rule from
+ * "Empresa" never silently categorizes something being processed into
+ * "Principal".
  */
 export async function findMatchingRule(
   householdId: string,
+  ledgerId: string,
   description: string,
 ): Promise<MerchantRuleMatch> {
-  const rules = await listMerchantRules(householdId);
+  const rules = (await listMerchantRules(householdId)).filter((r) => r.ledger_id === ledgerId);
   const normDesc = normalizeStr(description);
 
   for (const rule of rules) {

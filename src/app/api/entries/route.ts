@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createEntry, listEntries } from "@/lib/entries/service";
+import { resolveLedgerId } from "@/lib/ledgers/service";
 import { isValidMonthKey, currentMonthKey } from "@/lib/date";
 
 export async function GET(request: Request) {
@@ -15,7 +16,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Mês inválido." }, { status: 400 });
   }
 
-  const entries = await listEntries(session.householdId, month, { paymentSourceId });
+  const ledgerId = await resolveLedgerId(session.householdId, searchParams.get("ledgerId"));
+  const entries = await listEntries(session.householdId, ledgerId, month, { paymentSourceId });
   return NextResponse.json({ entries });
 }
 
@@ -25,8 +27,10 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => null);
   const entryType = body?.entryType === "income" ? "income" : "expense";
+  const ledgerId = await resolveLedgerId(session.householdId, body?.ledgerId);
 
   const result = await createEntry(session.householdId, {
+    ledgerId,
     entryType,
     entryDate: typeof body?.entryDate === "string" ? body.entryDate : "",
     description: typeof body?.description === "string" ? body.description : "",

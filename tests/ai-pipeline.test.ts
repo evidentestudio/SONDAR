@@ -21,6 +21,7 @@ function item(overrides: Partial<RawExtractedItem>): RawExtractedItem {
 
 describe("processExtractedItems", () => {
   let householdId: string;
+  let ledgerId: string;
   let mercadoId: string;
   let assinaturasId: string;
 
@@ -30,8 +31,14 @@ describe("processExtractedItems", () => {
     );
     householdId = rows[0].id;
 
-    const mercado = await createCategory(householdId, { name: "Mercado" });
-    const assinaturas = await createCategory(householdId, { name: "Assinaturas" });
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerId = ledgerRows[0].id;
+
+    const mercado = await createCategory(householdId, ledgerId, { name: "Mercado" });
+    const assinaturas = await createCategory(householdId, ledgerId, { name: "Assinaturas" });
     if (mercado.status !== "created" || assinaturas.status !== "created") {
       throw new Error("setup failed");
     }
@@ -44,12 +51,13 @@ describe("processExtractedItems", () => {
     await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM merchant_rules WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
     await pool.end();
   });
 
   it("resolve categoria conhecida de forma insensível a acento/caixa", async () => {
-    const [draft] = await processExtractedItems(householdId, [
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
       item({ category: "mercado", description: "Padaria da Esquina" }),
     ]);
     expect(draft.categoryId).toBe(mercadoId);
@@ -59,7 +67,7 @@ describe("processExtractedItems", () => {
   });
 
   it("categoria inventada pela IA cai em Aguardando Revisão — nunca cria categoria nova", async () => {
-    const [draft] = await processExtractedItems(householdId, [
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
       item({ category: "Categoria Que Não Existe", description: "Compra Estranha" }),
     ]);
     expect(draft.categoryId).toBeNull();
@@ -70,9 +78,9 @@ describe("processExtractedItems", () => {
   });
 
   it("regra de estabelecimento sobrepõe o palpite da IA", async () => {
-    await createMerchantRule(householdId, { pattern: "ifood", categoryId: mercadoId });
+    await createMerchantRule(householdId, ledgerId, { pattern: "ifood", categoryId: mercadoId });
 
-    const [draft] = await processExtractedItems(householdId, [
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
       item({ description: "IFOOD*Restaurante X", category: "Assinaturas" }),
     ]);
     expect(draft.categoryId).toBe(mercadoId);
@@ -81,13 +89,13 @@ describe("processExtractedItems", () => {
   });
 
   it("regra ambígua força Aguardando Revisão independente do palpite da IA", async () => {
-    await createMerchantRule(householdId, {
+    await createMerchantRule(householdId, ledgerId, {
       pattern: "anthropic",
       categoryId: assinaturasId,
       isAmbiguous: true,
     });
 
-    const [draft] = await processExtractedItems(householdId, [
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
       item({ description: "ANTHROPIC PBC", category: "Mercado" }),
     ]);
     expect(draft.categoryId).toBeNull();
@@ -98,6 +106,7 @@ describe("processExtractedItems", () => {
 
   it("detecta possível duplicidade quando já existe lançamento igual no mês", async () => {
     const created = await createEntry(householdId, {
+      ledgerId,
       entryType: "expense",
       entryDate: "2026-09-10",
       description: "Assinatura mensal",
@@ -106,14 +115,14 @@ describe("processExtractedItems", () => {
     });
     expect(created.status).toBe("created");
 
-    const [draft] = await processExtractedItems(householdId, [
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
       item({ date: "2026-09-15", description: "Outra Loja Qualquer", category: "Mercado", amount: 39.9 }),
     ]);
     expect(draft.possibleDuplicate).toBe(true);
   });
 
   it("itens malformados são descartados silenciosamente", async () => {
-    const drafts = await processExtractedItems(householdId, [
+    const drafts = await processExtractedItems(householdId, ledgerId, [
       item({ date: "05/09/2026" }), // data fora do formato ISO
       item({ description: "   " }), // descrição vazia
       item({ amount: 0 }), // valor não positivo

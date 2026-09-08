@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
-import { deleteMerchantRule, updateMerchantRule } from "@/lib/merchant-rules/service";
+import { deleteLedger, updateLedger } from "@/lib/ledgers/service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -8,18 +8,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
+  const name = typeof body?.name === "string" ? body.name : "";
 
-  const input: { pattern?: string; categoryId?: string; ledgerId?: string; isAmbiguous?: boolean } = {};
-  if (typeof body?.pattern === "string") input.pattern = body.pattern;
-  if (typeof body?.categoryId === "string") input.categoryId = body.categoryId;
-  if (typeof body?.ledgerId === "string") input.ledgerId = body.ledgerId;
-  if (typeof body?.isAmbiguous === "boolean") input.isAmbiguous = body.isAmbiguous;
-
-  const result = await updateMerchantRule(session.householdId, id, input);
+  const result = await updateLedger(session.householdId, id, { name });
   if (result.status === "error") {
     return NextResponse.json({ error: result.message }, { status: 400 });
   }
-  return NextResponse.json({ rule: result.rule });
+  return NextResponse.json({ ledger: result.ledger });
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -27,6 +22,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const { id } = await params;
-  await deleteMerchantRule(session.householdId, id);
+  const result = await deleteLedger(session.householdId, id);
+  if (result.status === "error") {
+    return NextResponse.json({ error: result.message }, { status: 400 });
+  }
   return NextResponse.json({ ok: true });
 }

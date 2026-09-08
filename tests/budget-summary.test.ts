@@ -12,6 +12,7 @@ const PREV_MONTH = "2026-08";
 
 describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
   let householdId: string;
+  let ledgerId: string;
   let carroId: string;
   let combustivelId: string;
   let mercadoId: string;
@@ -23,13 +24,19 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     );
     householdId = rows[0].id;
 
-    const carro = await createCategory(householdId, { name: "Carro" });
-    const mercado = await createCategory(householdId, { name: "Mercado" });
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerId = ledgerRows[0].id;
+
+    const carro = await createCategory(householdId, ledgerId, { name: "Carro" });
+    const mercado = await createCategory(householdId, ledgerId, { name: "Mercado" });
     if (carro.status !== "created" || mercado.status !== "created") throw new Error("setup failed");
     carroId = carro.category.id;
     mercadoId = mercado.category.id;
 
-    const combustivel = await createCategory(householdId, { name: "Combustível", parentId: carroId });
+    const combustivel = await createCategory(householdId, ledgerId, { name: "Combustível", parentId: carroId });
     if (combustivel.status !== "created") throw new Error("setup failed");
     combustivelId = combustivel.category.id;
 
@@ -47,12 +54,13 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     // inserindo direto no banco, como o bug real do protótipo descrito em
     // sondar-full-build-instructions.md 3.4.
     await pool.query(
-      `INSERT INTO financial_entries (household_id, entry_type, entry_date, description, amount, category_id)
-       VALUES ($1, 'expense', '2026-09-05', 'Multa (órfã, direto no grupo Carro)', 50, $2)`,
-      [householdId, carroId],
+      `INSERT INTO financial_entries (household_id, ledger_id, entry_type, entry_date, description, amount, category_id)
+       VALUES ($1, $2, 'expense', '2026-09-05', 'Multa (órfã, direto no grupo Carro)', 50, $3)`,
+      [householdId, ledgerId, carroId],
     );
 
     await createEntry(householdId, {
+      ledgerId,
       entryType: "expense",
       entryDate: "2026-09-10",
       description: "Gasolina",
@@ -62,6 +70,7 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     });
 
     await createEntry(householdId, {
+      ledgerId,
       entryType: "expense",
       entryDate: "2026-09-15",
       description: "Feira",
@@ -70,6 +79,7 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     });
 
     await createEntry(householdId, {
+      ledgerId,
       entryType: "income",
       entryDate: "2026-09-01",
       description: "Salário",
@@ -83,12 +93,13 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     await pool.query(`DELETE FROM budgets WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM payment_sources WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
     await pool.end();
   });
 
   it("categoria-folha soma direto (Mercado)", async () => {
-    const tree = await getCategoryMonthSummary(householdId, MONTH);
+    const tree = await getCategoryMonthSummary(householdId, ledgerId, MONTH);
     const mercado = tree.find((c) => c.id === mercadoId)!;
     expect(mercado.gasto).toBe(200);
     expect(mercado.orcado).toBe(250);
@@ -96,7 +107,7 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
   });
 
   it("categoria com subcategoria soma filhas + órfão direto (bug real do protótipo)", async () => {
-    const tree = await getCategoryMonthSummary(householdId, MONTH);
+    const tree = await getCategoryMonthSummary(householdId, ledgerId, MONTH);
     const carro = tree.find((c) => c.id === carroId)!;
 
     // manual: 100 (Combustível) + 50 (órfã direto em Carro)
@@ -110,30 +121,31 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
   });
 
   it("total do mês bate com a soma manual das categorias normais", async () => {
-    const totals = await getMonthTotals(householdId, MONTH);
+    const totals = await getMonthTotals(householdId, ledgerId, MONTH);
     // manual: 50 (Carro direto) + 100 (Combustível) + 200 (Mercado) = 350
     expect(totals.gastoTotal).toBe(350);
     expect(totals.creditosTotal).toBe(300);
   });
 
   it("total por origem bate com a soma manual (só a Gasolina tem Cartão)", async () => {
-    const totals = await getPaymentSourceTotals(householdId, MONTH);
+    const totals = await getPaymentSourceTotals(householdId, ledgerId, MONTH);
     const cartao = totals.find((t) => t.paymentSourceId === cartaoId);
     expect(cartao?.total).toBe(100);
   });
 
   it("copiar orçamento do mês anterior traz os valores pro mês alvo", async () => {
     await setBudget(householdId, mercadoId, PREV_MONTH, 999);
-    const result = await copyBudgetsFromPreviousMonth(householdId, MONTH);
+    const result = await copyBudgetsFromPreviousMonth(householdId, ledgerId, MONTH);
     expect(result.copied).toBeGreaterThan(0);
 
-    const tree = await getCategoryMonthSummary(householdId, MONTH);
+    const tree = await getCategoryMonthSummary(householdId, ledgerId, MONTH);
     const mercado = tree.find((c) => c.id === mercadoId)!;
     expect(mercado.orcado).toBe(999);
   });
 
   it("recusa lançamento numa categoria-grupo (só folha recebe lançamento)", async () => {
     const result = await createEntry(householdId, {
+      ledgerId,
       entryType: "expense",
       entryDate: "2026-09-20",
       description: "Não deveria entrar",

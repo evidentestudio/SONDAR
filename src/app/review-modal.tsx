@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import type { CategorySummaryNode } from "@/lib/budget-summary/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
+import type { LedgerRow } from "@/lib/ledgers/service";
 import { formatBRL, parseBRLAmount } from "@/lib/format";
+import { fetchLedgerLeaves } from "@/lib/client/ledger-categories";
 
 type SourceType = "image" | "text";
+type LeafOption = { id: string; name: string };
 
 type UploadedImage = { data: string; mediaType: string; previewUrl: string };
 
@@ -14,6 +16,7 @@ type DraftRow = {
   date: string;
   description: string;
   amount: string;
+  ledgerId: string;
   categoryId: string;
   categoryName: string;
   needsReview: boolean;
@@ -33,12 +36,16 @@ function suggestPattern(description: string): string {
 }
 
 export function ReviewModal({
-  leaves,
+  ledgers,
+  defaultLedgerId,
+  initialLeaves,
   paymentSources,
   onClose,
   onSaved,
 }: {
-  leaves: CategorySummaryNode[];
+  ledgers: LedgerRow[];
+  defaultLedgerId: string;
+  initialLeaves: LeafOption[];
   paymentSources: PaymentSourceRow[];
   onClose: () => void;
   onSaved: () => void;
@@ -50,9 +57,13 @@ export function ReviewModal({
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [leavesCache, setLeavesCache] = useState<Record<string, LeafOption[]>>({
+    [defaultLedgerId]: initialLeaves,
+  });
   const [ruleForm, setRuleForm] = useState<{
     rowKey: string;
     pattern: string;
+    ledgerId: string;
     categoryId: string;
     isAmbiguous: boolean;
   } | null>(null);
@@ -81,8 +92,8 @@ export function ReviewModal({
     try {
       const body =
         sourceType === "image"
-          ? { sourceType, images: images.map(({ data, mediaType }) => ({ data, mediaType })) }
-          : { sourceType, text };
+          ? { sourceType, ledgerId: defaultLedgerId, images: images.map(({ data, mediaType }) => ({ data, mediaType })) }
+          : { sourceType, ledgerId: defaultLedgerId, text };
 
       const res = await fetch("/api/ai/extract", {
         method: "POST",
@@ -117,6 +128,7 @@ export function ReviewModal({
             date: item.date,
             description: item.description,
             amount: String(item.amount),
+            ledgerId: defaultLedgerId,
             categoryId: item.categoryId ?? "",
             categoryName: item.categoryName,
             needsReview: item.needsReview,
@@ -146,6 +158,21 @@ export function ReviewModal({
     setRows((prev) => (prev ? prev.filter((r) => r.key !== key) : prev));
   }
 
+  async function ensureLeaves(ledgerId: string): Promise<LeafOption[]> {
+    if (leavesCache[ledgerId]) return leavesCache[ledgerId];
+    const fetched = await fetchLedgerLeaves(ledgerId);
+    setLeavesCache((prev) => ({ ...prev, [ledgerId]: fetched }));
+    return fetched;
+  }
+
+  async function changeRowLedger(key: string, ledgerId: string) {
+    const leaves = await ensureLeaves(ledgerId);
+    // The chosen category almost certainly doesn't exist in the new
+    // ledger's independent category tree — reset it so nothing gets saved
+    // against a category that belongs to a different orçamento.
+    updateRow(key, { ledgerId, categoryId: leaves[0]?.id ?? "" });
+  }
+
   async function submitRule() {
     if (!ruleForm) return;
     updateRow(ruleForm.rowKey, { savingRule: true });
@@ -154,6 +181,7 @@ export function ReviewModal({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pattern: ruleForm.pattern,
+        ledgerId: ruleForm.ledgerId,
         categoryId: ruleForm.categoryId,
         isAmbiguous: ruleForm.isAmbiguous,
       }),
@@ -176,6 +204,7 @@ export function ReviewModal({
             date: r.date,
             description: r.description,
             amount: parseBRLAmount(r.amount),
+            ledgerId: r.ledgerId,
             categoryId: r.categoryId || null,
             paymentSourceId: r.paymentSourceId || null,
             needsReview: r.needsReview,
@@ -317,7 +346,9 @@ export function ReviewModal({
                   Nenhum lançamento identificado nessa fatura.
                 </p>
               )}
-              {rows.map((row) => (
+              {rows.map((row) => {
+                const rowLeaves = leavesCache[row.ledgerId] ?? [];
+                return (
                 <div key={row.key} className="rounded-lg border border-border-strong p-3">
                   <div className="mb-2 flex flex-wrap gap-2">
                     {row.needsReview && (
@@ -369,13 +400,26 @@ export function ReviewModal({
                     />
                   </div>
                   <div className="mt-2 flex flex-wrap gap-2">
+                    {ledgers.length > 1 && (
+                      <select
+                        value={row.ledgerId}
+                        onChange={(e) => changeRowLedger(row.key, e.target.value)}
+                        className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                      >
+                        {ledgers.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     <select
                       value={row.categoryId}
                       onChange={(e) => updateRow(row.key, { categoryId: e.target.value })}
                       className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
                     >
                       <option value="">Aguardando Revisão</option>
-                      {leaves.map((l) => (
+                      {rowLeaves.map((l) => (
                         <option key={l.id} value={l.id}>
                           {l.name}
                         </option>
@@ -399,7 +443,8 @@ export function ReviewModal({
                         setRuleForm({
                           rowKey: row.key,
                           pattern: suggestPattern(row.description),
-                          categoryId: row.categoryId || leaves[0]?.id || "",
+                          ledgerId: row.ledgerId,
+                          categoryId: row.categoryId || rowLeaves[0]?.id || "",
                           isAmbiguous: false,
                         })
                       }
@@ -430,7 +475,7 @@ export function ReviewModal({
                         onChange={(e) => setRuleForm({ ...ruleForm, categoryId: e.target.value })}
                         className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
                       >
-                        {leaves.map((l) => (
+                        {rowLeaves.map((l) => (
                           <option key={l.id} value={l.id}>
                             {l.name}
                           </option>
@@ -461,7 +506,8 @@ export function ReviewModal({
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

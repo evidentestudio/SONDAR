@@ -101,8 +101,12 @@ async function main() {
 
     // Runs against the app's own pool (lib/db.ts), after commit, so the
     // household row is visible. Idempotent — safe even if it already exists.
+    const { ensureDefaultLedger } = await import("../src/lib/ledgers/service");
+    const ledgerId = await ensureDefaultLedger(householdId);
+    console.log(`Ensured "Principal" ledger for household ${householdId}`);
+
     const { ensureAwaitingReviewCategory } = await import("../src/lib/categories/service");
-    await ensureAwaitingReviewCategory(householdId);
+    await ensureAwaitingReviewCategory(householdId, ledgerId);
     console.log(`Ensured "Aguardando Revisão" category for household ${householdId}`);
 
     console.log("Seed complete.");
