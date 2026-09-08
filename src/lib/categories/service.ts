@@ -133,7 +133,6 @@ export async function listLeafCategories(householdId: string, ledgerId: string):
 export type CreateCategoryInput = {
   name: string;
   parentId?: string | null;
-  categoryType?: "normal" | "reserve";
   color?: string | null;
   icon?: string | null;
   confirmMerge?: boolean;
@@ -168,9 +167,6 @@ export async function createCategory(
     }
   }
 
-  // Subcategories are always 'normal' — reserve/awaiting_review only make sense standalone.
-  const categoryType: CategoryType = parentId ? "normal" : (input.categoryType ?? "normal");
-
   const existing = await findCanonicalCategory(ledgerId, name);
 
   if (existing) {
@@ -196,9 +192,9 @@ export async function createCategory(
 
   const { rows } = await db<CategoryRow>(
     `INSERT INTO categories (household_id, ledger_id, parent_id, name, category_type, color, icon)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $2, $3, $4, 'normal', $5, $6)
      RETURNING *`,
-    [householdId, ledgerId, parentId, name, categoryType, input.color ?? null, input.icon ?? null],
+    [householdId, ledgerId, parentId, name, input.color ?? null, input.icon ?? null],
   );
   return { status: "created", category: rows[0] };
 }

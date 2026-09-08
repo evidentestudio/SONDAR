@@ -134,19 +134,13 @@ describe("categorias — Etapa 1", () => {
   });
 
   describe("ordenação", () => {
-    it("normal alfabética primeiro, depois reserve, depois awaiting_review por último", async () => {
+    it("normal alfabética primeiro, depois awaiting_review por último", async () => {
       await ensureAwaitingReviewCategory(householdId, ledgerId);
       await createCategory(householdId, ledgerId, { name: "Zebra" });
       await createCategory(householdId, ledgerId, { name: "Alimentação" });
-      await createCategory(householdId, ledgerId, { name: "Reserva de emergência", categoryType: "reserve" });
 
       const tree = await getCategoryTree(householdId, ledgerId);
-      expect(tree.map((c) => c.name)).toEqual([
-        "Alimentação",
-        "Zebra",
-        "Reserva de emergência",
-        "Aguardando Revisão",
-      ]);
+      expect(tree.map((c) => c.name)).toEqual(["Alimentação", "Zebra", "Aguardando Revisão"]);
     });
   });
 

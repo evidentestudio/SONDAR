@@ -70,7 +70,6 @@ export function ReviewModal({
     parentId: string;
     createNewParent: boolean;
     newParentName: string;
-    isReserve: boolean;
     error: string | null;
     saving: boolean;
   } | null>(null);
@@ -181,7 +180,7 @@ export function ReviewModal({
     updateRow(key, { ledgerId, categoryId: flattenLeaves(tree)[0]?.id ?? "" });
   }
 
-  async function createCategory(ledgerId: string, input: { name: string; parentId: string | null; categoryType: "normal" | "reserve" }) {
+  async function createCategory(ledgerId: string, input: { name: string; parentId: string | null }) {
     const res = await fetch("/api/categories", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -212,7 +211,6 @@ export function ReviewModal({
       const parent = await createCategory(newCategoryForm.ledgerId, {
         name: newParentName,
         parentId: null,
-        categoryType: "normal",
       });
       if (!parent.ok) {
         setNewCategoryForm({
@@ -228,7 +226,6 @@ export function ReviewModal({
     const child = await createCategory(newCategoryForm.ledgerId, {
       name,
       parentId,
-      categoryType: parentId ? "normal" : newCategoryForm.isReserve ? "reserve" : "normal",
     });
     // Refresh either way — if only the parent creation above succeeded, the
     // tree should still pick it up so the next attempt can use it directly.
@@ -558,7 +555,6 @@ export function ReviewModal({
                           parentId: "",
                           createNewParent: false,
                           newParentName: "",
-                          isReserve: false,
                           error: null,
                           saving: false,
                         })
@@ -654,18 +650,6 @@ export function ReviewModal({
                           />
                           colocar dentro de uma categoria-mãe nova
                         </label>
-                        {!newCategoryForm.createNewParent && !newCategoryForm.parentId && (
-                          <label className="flex items-center gap-1 text-xs text-ink-soft">
-                            <input
-                              type="checkbox"
-                              checked={newCategoryForm.isReserve}
-                              onChange={(e) =>
-                                setNewCategoryForm({ ...newCategoryForm, isReserve: e.target.checked })
-                              }
-                            />
-                            é uma reserva
-                          </label>
-                        )}
                       </div>
                       <div className="flex gap-2">
                         <button

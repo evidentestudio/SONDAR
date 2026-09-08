@@ -12,7 +12,6 @@ type PendingCreate = {
   name: string;
   color: string | null;
   parentId: string | null;
-  categoryType: "normal" | "reserve";
 };
 
 type Collision = {
@@ -26,8 +25,6 @@ type DeleteState = {
   entryCount?: number;
   moveToCategoryId?: string;
 };
-
-const RESERVE_DEFAULT_COLOR = "#6B3FA0";
 
 function flattenLeaves(nodes: CategoryNode[]): CategoryNode[] {
   const out: CategoryNode[] = [];
@@ -54,7 +51,6 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [addingTopLevel, setAddingTopLevel] = useState(false);
-  const [addingReserve, setAddingReserve] = useState(false);
   const [addingSubcategoryFor, setAddingSubcategoryFor] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; name: string; color: string } | null>(null);
   const [collision, setCollision] = useState<Collision | null>(null);
@@ -84,7 +80,6 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
         name: pending.name,
         color: pending.color,
         parentId: pending.parentId,
-        categoryType: pending.categoryType,
         confirmMerge,
         ledgerId,
       }),
@@ -103,7 +98,6 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
 
     setCollision(null);
     setAddingTopLevel(false);
-    setAddingReserve(false);
     setAddingSubcategoryFor(null);
     await refetch();
   }
@@ -161,25 +155,11 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={() => {
-            setAddingTopLevel((v) => !v);
-            setAddingReserve(false);
-          }}
+          onClick={() => setAddingTopLevel((v) => !v)}
           className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
           style={{ touchAction: "manipulation" }}
         >
           + Nova categoria
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setAddingReserve((v) => !v);
-            setAddingTopLevel(false);
-          }}
-          className="min-h-11 rounded-lg border border-border-strong px-4 text-sm font-medium text-reserve"
-          style={{ touchAction: "manipulation" }}
-        >
-          + Nova Reserva
         </button>
       </div>
 
@@ -188,20 +168,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
           placeholder="Nome da categoria"
           defaultColor="#2F6F5E"
           onCancel={() => setAddingTopLevel(false)}
-          onSubmit={(name, color) =>
-            submitCreate({ name, color, parentId: null, categoryType: "normal" })
-          }
-        />
-      )}
-
-      {addingReserve && (
-        <InlineCategoryForm
-          placeholder="Nome da reserva"
-          defaultColor={RESERVE_DEFAULT_COLOR}
-          onCancel={() => setAddingReserve(false)}
-          onSubmit={(name, color) =>
-            submitCreate({ name, color, parentId: null, categoryType: "reserve" })
-          }
+          onSubmit={(name, color) => submitCreate({ name, color, parentId: null })}
         />
       )}
 
@@ -276,9 +243,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
                   placeholder="Nome da subcategoria"
                   defaultColor="#2F6F5E"
                   onCancel={() => setAddingSubcategoryFor(null)}
-                  onSubmit={(name, color) =>
-                    submitCreate({ name, color, parentId: cat.id, categoryType: "normal" })
-                  }
+                  onSubmit={(name, color) => submitCreate({ name, color, parentId: cat.id })}
                 />
               </div>
             )}

@@ -28,7 +28,6 @@ export async function POST(request: Request) {
   const result = await createCategory(session.householdId, ledgerId, {
     name,
     parentId: typeof body?.parentId === "string" ? body.parentId : null,
-    categoryType: body?.categoryType === "reserve" ? "reserve" : "normal",
     color: typeof body?.color === "string" ? body.color : null,
     icon: typeof body?.icon === "string" ? body.icon : null,
     confirmMerge: body?.confirmMerge === true,
