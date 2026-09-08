@@ -6,7 +6,7 @@ import type { EntryRow, EntryType } from "@/lib/entries/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
-import { formatBRL, parseBRLAmount } from "@/lib/format";
+import { formatBRL, parseBRLAmount, toAmountInputValue } from "@/lib/format";
 import { fetchLedgerLeaves } from "@/lib/client/ledger-categories";
 import { ReviewModal } from "./review-modal";
 
@@ -329,7 +329,7 @@ function LedgerPanel({
       entryType: entry.entry_type,
       entryDate: entry.entry_date.slice(0, 10),
       description: entry.description,
-      amount: String(entry.amount),
+      amount: toAmountInputValue(Number(entry.amount)),
       categoryId: entry.category_id ?? "",
       paymentSourceId: entry.payment_source_id ?? "",
     });
@@ -407,7 +407,7 @@ function LedgerPanel({
               onChange={(e) => changeFilterSource(e.target.value)}
               className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
             >
-              <option value="">Todas as origens</option>
+              <option value="">Todas as formas</option>
               {paymentSources.map((ps) => (
                 <option key={ps.id} value={ps.id}>
                   {ps.name}
@@ -457,7 +457,7 @@ function LedgerPanel({
                   <th className="py-2">Data</th>
                   <th className="py-2">Descrição</th>
                   <th className="py-2">Categoria</th>
-                  <th className="py-2">Origem</th>
+                  <th className="py-2">Forma</th>
                   <th className="py-2 text-right">Valor</th>
                   <th className="py-2" />
                 </tr>
@@ -510,7 +510,7 @@ function LedgerPanel({
                           }
                           className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
                         >
-                          <option value="">Origem (opcional)</option>
+                          <option value="">Forma de pagamento (opcional)</option>
                           {paymentSources.map((ps) => (
                             <option key={ps.id} value={ps.id}>
                               {ps.name}
@@ -632,9 +632,9 @@ function LedgerPanel({
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4">
-        <h3 className="mb-3 font-serif text-lg text-ink">Total por origem</h3>
+        <h3 className="mb-3 font-serif text-lg text-ink">Total por forma de pagamento</h3>
         {paymentSourceTotals.length === 0 ? (
-          <p className="text-sm text-muted">Nenhum lançamento com origem definida neste mês.</p>
+          <p className="text-sm text-muted">Nenhum lançamento com forma de pagamento definida neste mês.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {paymentSourceTotals.map((p) => (
@@ -1042,7 +1042,7 @@ function EntryForm({
           onChange={(e) => setPaymentSourceId(e.target.value)}
           className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
         >
-          <option value="">Origem (opcional)</option>
+          <option value="">Forma de pagamento (opcional)</option>
           {paymentSources.map((ps) => (
             <option key={ps.id} value={ps.id}>
               {ps.name}

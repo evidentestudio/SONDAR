@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
-import { formatBRL, parseBRLAmount } from "@/lib/format";
+import { formatBRL, parseBRLAmount, toAmountInputValue } from "@/lib/format";
 import { fetchLedgerLeaves } from "@/lib/client/ledger-categories";
 
 type SourceType = "image" | "text";
@@ -127,7 +127,7 @@ export function ReviewModal({
             key: `${index}-${item.description}`,
             date: item.date,
             description: item.description,
-            amount: String(item.amount),
+            amount: toAmountInputValue(item.amount),
             ledgerId: defaultLedgerId,
             categoryId: item.categoryId ?? "",
             categoryName: item.categoryName,
@@ -398,64 +398,82 @@ export function ReviewModal({
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <input
-                      type="date"
-                      value={row.date}
-                      onChange={(e) => updateRow(row.key, { date: e.target.value })}
-                      className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
-                    />
-                    <input
-                      type="text"
-                      value={row.description}
-                      onChange={(e) => updateRow(row.key, { description: e.target.value })}
-                      className="min-h-11 min-w-40 flex-1 rounded-lg border border-border-strong px-2 text-sm"
-                    />
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={row.amount}
-                      onChange={(e) => updateRow(row.key, { amount: e.target.value })}
-                      className="money min-h-11 w-28 rounded-lg border border-border-strong px-2 text-sm"
-                    />
+                    <label className="flex flex-col gap-0.5 text-xs text-muted">
+                      Data
+                      <input
+                        type="date"
+                        value={row.date}
+                        onChange={(e) => updateRow(row.key, { date: e.target.value })}
+                        className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                      />
+                    </label>
+                    <label className="flex min-w-40 flex-1 flex-col gap-0.5 text-xs text-muted">
+                      Descrição
+                      <input
+                        type="text"
+                        value={row.description}
+                        onChange={(e) => updateRow(row.key, { description: e.target.value })}
+                        className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                      />
+                    </label>
+                    <label className="flex w-28 flex-col gap-0.5 text-xs text-muted">
+                      Valor
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={row.amount}
+                        onChange={(e) => updateRow(row.key, { amount: e.target.value })}
+                        className="money min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                      />
+                    </label>
                   </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 flex flex-wrap items-end gap-2">
                     {ledgers.length > 1 && (
+                      <label className="flex flex-col gap-0.5 text-xs text-muted">
+                        Orçamento
+                        <select
+                          value={row.ledgerId}
+                          onChange={(e) => changeRowLedger(row.key, e.target.value)}
+                          className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                        >
+                          {ledgers.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                      Categoria
                       <select
-                        value={row.ledgerId}
-                        onChange={(e) => changeRowLedger(row.key, e.target.value)}
+                        value={row.categoryId}
+                        onChange={(e) => updateRow(row.key, { categoryId: e.target.value })}
                         className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
                       >
-                        {ledgers.map((l) => (
+                        <option value="">Aguardando Revisão</option>
+                        {rowLeaves.map((l) => (
                           <option key={l.id} value={l.id}>
                             {l.name}
                           </option>
                         ))}
                       </select>
-                    )}
-                    <select
-                      value={row.categoryId}
-                      onChange={(e) => updateRow(row.key, { categoryId: e.target.value })}
-                      className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
-                    >
-                      <option value="">Aguardando Revisão</option>
-                      {rowLeaves.map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.name}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={row.paymentSourceId}
-                      onChange={(e) => updateRow(row.key, { paymentSourceId: e.target.value })}
-                      className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
-                    >
-                      <option value="">Origem (opcional)</option>
-                      {paymentSources.map((ps) => (
-                        <option key={ps.id} value={ps.id}>
-                          {ps.name}
-                        </option>
-                      ))}
-                    </select>
+                    </label>
+                    <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                      Forma de pagamento
+                      <select
+                        value={row.paymentSourceId}
+                        onChange={(e) => updateRow(row.key, { paymentSourceId: e.target.value })}
+                        className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                      >
+                        <option value="">Opcional</option>
+                        {paymentSources.map((ps) => (
+                          <option key={ps.id} value={ps.id}>
+                            {ps.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       onClick={() =>

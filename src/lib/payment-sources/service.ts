@@ -47,7 +47,7 @@ export async function createPaymentSource(
 
   const existing = await findCanonicalPaymentSource(householdId, name);
   if (existing) {
-    return { status: "error", message: `Já existe uma origem chamada "${existing.name}".` };
+    return { status: "error", message: `Já existe uma forma de pagamento chamada "${existing.name}".` };
   }
 
   const { rows } = await db<PaymentSourceRow>(
@@ -71,7 +71,7 @@ export async function updatePaymentSource(
     [id, householdId],
   );
   const current = existingRows[0];
-  if (!current) return { status: "error", message: "Origem não encontrada." };
+  if (!current) return { status: "error", message: "Forma de pagamento não encontrada." };
 
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -81,7 +81,7 @@ export async function updatePaymentSource(
     if (!trimmed) return { status: "error", message: "Nome não pode ser vazio." };
     const existing = await findCanonicalPaymentSource(householdId, trimmed);
     if (existing && existing.id !== id) {
-      return { status: "error", message: `Já existe uma origem chamada "${existing.name}".` };
+      return { status: "error", message: `Já existe uma forma de pagamento chamada "${existing.name}".` };
     }
     values.push(trimmed);
     sets.push(`name = $${values.length}`);

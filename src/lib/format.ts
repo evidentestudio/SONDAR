@@ -18,3 +18,13 @@ export function parseBRLAmount(input: string): number {
   const cleaned = input.trim().replace(/\./g, "").replace(",", ".");
   return Number(cleaned);
 }
+
+/**
+ * Formats a number for an editable amount field using Brazilian decimal
+ * notation (comma, two places) — the inverse of parseBRLAmount, and what an
+ * input pre-filled from a number (an AI-extracted value, an existing entry
+ * being edited) needs to show instead of JS's own "133.33".
+ */
+export function toAmountInputValue(amount: number): string {
+  return amount.toFixed(2).replace(".", ",");
+}
