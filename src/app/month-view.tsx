@@ -696,12 +696,16 @@ function CategorySummaryRow({
 }) {
   const isGroup = node.children.length > 0;
   const pct = node.orcado > 0 ? Math.min(100, Math.round((node.gasto / node.orcado) * 100)) : 0;
+  const hasValue = node.gasto > 0 || node.orcado > 0;
   const rowBg =
-    node.categoryType === "awaiting_review"
+    node.categoryType === "awaiting_review" && hasValue
       ? { background: "var(--row-awaiting-bg)" }
       : node.categoryType === "reserve" && node.color
         ? { background: `color-mix(in srgb, ${node.color} 16%, white)` }
         : {};
+  // "Aguardando Revisão" is a system category created without a color —
+  // give it a fixed dot instead of leaving it the only row with none.
+  const dotColor = node.color ?? (node.categoryType === "awaiting_review" ? "var(--row-awaiting-text)" : null);
 
   return (
     <div className="border-b border-border last:border-b-0">
@@ -711,8 +715,8 @@ function CategorySummaryRow({
       >
         <div className="flex min-w-0 items-center gap-2">
           {depth > 0 && <span className="text-muted">↳</span>}
-          {node.color && (
-            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: node.color }} aria-hidden />
+          {dotColor && (
+            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden />
           )}
           <button
             type="button"

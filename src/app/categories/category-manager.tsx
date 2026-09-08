@@ -515,6 +515,10 @@ function CategoryRow({
     );
   }
 
+  // "Aguardando Revisão" is a system category created without a color —
+  // give it a fixed dot instead of leaving it the only row with none.
+  const dotColor = node.color ?? (node.category_type === "awaiting_review" ? "var(--row-awaiting-text)" : null);
+
   return (
     <div>
       <div
@@ -523,12 +527,8 @@ function CategoryRow({
       >
         <div className="flex min-w-0 items-center gap-2">
           {depth > 0 && <span className="text-muted">↳</span>}
-          {node.color && (
-            <span
-              className="h-3 w-3 shrink-0 rounded-full"
-              style={{ background: node.color }}
-              aria-hidden
-            />
+          {dotColor && (
+            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden />
           )}
           <button
             type="button"
