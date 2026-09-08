@@ -68,6 +68,8 @@ export function ReviewModal({
     ledgerId: string;
     name: string;
     parentId: string;
+    createNewParent: boolean;
+    newParentName: string;
     isReserve: boolean;
     error: string | null;
     saving: boolean;
@@ -179,6 +181,16 @@ export function ReviewModal({
     updateRow(key, { ledgerId, categoryId: flattenLeaves(tree)[0]?.id ?? "" });
   }
 
+  async function createCategory(ledgerId: string, input: { name: string; parentId: string | null; categoryType: "normal" | "reserve" }) {
+    const res = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, ledgerId }),
+    });
+    const data = await res.json();
+    return { ok: res.ok, data } as const;
+  }
+
   async function submitNewCategory() {
     if (!newCategoryForm) return;
     const name = newCategoryForm.name.trim();
@@ -186,28 +198,50 @@ export function ReviewModal({
       setNewCategoryForm({ ...newCategoryForm, error: "Nome não pode ser vazio." });
       return;
     }
+    const newParentName = newCategoryForm.newParentName.trim();
+    if (newCategoryForm.createNewParent && !newParentName) {
+      setNewCategoryForm({ ...newCategoryForm, error: "Nome da categoria-mãe não pode ser vazio." });
+      return;
+    }
+
     setNewCategoryForm({ ...newCategoryForm, saving: true, error: null });
-    const res = await fetch("/api/categories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        ledgerId: newCategoryForm.ledgerId,
-        parentId: newCategoryForm.parentId || null,
-        categoryType: newCategoryForm.parentId ? "normal" : newCategoryForm.isReserve ? "reserve" : "normal",
-      }),
+
+    let parentId = newCategoryForm.parentId || null;
+
+    if (newCategoryForm.createNewParent) {
+      const parent = await createCategory(newCategoryForm.ledgerId, {
+        name: newParentName,
+        parentId: null,
+        categoryType: "normal",
+      });
+      if (!parent.ok) {
+        setNewCategoryForm({
+          ...newCategoryForm,
+          saving: false,
+          error: parent.data.message ?? parent.data.error ?? "Não foi possível criar a categoria-mãe.",
+        });
+        return;
+      }
+      parentId = parent.data.category.id;
+    }
+
+    const child = await createCategory(newCategoryForm.ledgerId, {
+      name,
+      parentId,
+      categoryType: parentId ? "normal" : newCategoryForm.isReserve ? "reserve" : "normal",
     });
-    const data = await res.json();
-    if (!res.ok) {
+    // Refresh either way — if only the parent creation above succeeded, the
+    // tree should still pick it up so the next attempt can use it directly.
+    await ensureTree(newCategoryForm.ledgerId, true);
+    if (!child.ok) {
       setNewCategoryForm({
         ...newCategoryForm,
         saving: false,
-        error: data.message ?? data.error ?? "Não foi possível criar.",
+        error: child.data.message ?? child.data.error ?? "Não foi possível criar.",
       });
       return;
     }
-    await ensureTree(newCategoryForm.ledgerId, true);
-    updateRow(newCategoryForm.rowKey, { categoryId: data.category.id });
+    updateRow(newCategoryForm.rowKey, { categoryId: child.data.category.id });
     setNewCategoryForm(null);
   }
 
@@ -522,6 +556,8 @@ export function ReviewModal({
                           ledgerId: row.ledgerId,
                           name: "",
                           parentId: "",
+                          createNewParent: false,
+                          newParentName: "",
                           isReserve: false,
                           error: null,
                           saving: false,
@@ -561,27 +597,64 @@ export function ReviewModal({
                         <p className="text-xs text-rust">{newCategoryForm.error}</p>
                       )}
                       <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          type="text"
-                          autoFocus
-                          value={newCategoryForm.name}
-                          onChange={(e) => setNewCategoryForm({ ...newCategoryForm, name: e.target.value })}
-                          placeholder="Nome da categoria"
-                          className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
-                        />
-                        <select
-                          value={newCategoryForm.parentId}
-                          onChange={(e) => setNewCategoryForm({ ...newCategoryForm, parentId: e.target.value })}
-                          className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
-                        >
-                          <option value="">— categoria própria (sem categoria-mãe) —</option>
-                          {topLevelCategories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              subcategoria de: {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        {!newCategoryForm.parentId && (
+                        <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                          Nome da categoria
+                          <input
+                            type="text"
+                            autoFocus
+                            value={newCategoryForm.name}
+                            onChange={(e) => setNewCategoryForm({ ...newCategoryForm, name: e.target.value })}
+                            placeholder="ex: Supermercado"
+                            className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                          />
+                        </label>
+                        {newCategoryForm.createNewParent ? (
+                          <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                            Nome da categoria-mãe (nova)
+                            <input
+                              type="text"
+                              value={newCategoryForm.newParentName}
+                              onChange={(e) =>
+                                setNewCategoryForm({ ...newCategoryForm, newParentName: e.target.value })
+                              }
+                              placeholder="ex: Mercado/Rancho"
+                              className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                            />
+                          </label>
+                        ) : (
+                          <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                            Categoria-mãe
+                            <select
+                              value={newCategoryForm.parentId}
+                              onChange={(e) => setNewCategoryForm({ ...newCategoryForm, parentId: e.target.value })}
+                              className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                            >
+                              <option value="">— categoria própria (sem categoria-mãe) —</option>
+                              {topLevelCategories.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  subcategoria de: {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <label className="flex items-center gap-1 text-xs text-ink-soft">
+                          <input
+                            type="checkbox"
+                            checked={newCategoryForm.createNewParent}
+                            onChange={(e) =>
+                              setNewCategoryForm({
+                                ...newCategoryForm,
+                                createNewParent: e.target.checked,
+                                parentId: "",
+                              })
+                            }
+                          />
+                          colocar dentro de uma categoria-mãe nova
+                        </label>
+                        {!newCategoryForm.createNewParent && !newCategoryForm.parentId && (
                           <label className="flex items-center gap-1 text-xs text-ink-soft">
                             <input
                               type="checkbox"
