@@ -275,22 +275,38 @@ function LedgerPanel({
     categoryId: string;
     paymentSourceId: string;
     ledgerId: string;
+    installment: { totalInstallments: number; currentInstallmentNumber: number } | null;
   }) {
     setError(null);
     const amount = parseBRLAmount(input.amount);
-    const res = await fetch("/api/entries", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        entryType: input.entryType,
-        entryDate: input.entryDate,
-        description: input.description,
-        amount,
-        categoryId: input.entryType === "expense" ? input.categoryId : null,
-        paymentSourceId: input.paymentSourceId || null,
-        ledgerId: input.ledgerId,
-      }),
-    });
+    const res = input.installment
+      ? await fetch("/api/installment-plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ledgerId: input.ledgerId,
+            description: input.description,
+            categoryId: input.categoryId || null,
+            paymentSourceId: input.paymentSourceId || null,
+            installmentAmount: amount,
+            totalInstallments: input.installment.totalInstallments,
+            currentInstallmentNumber: input.installment.currentInstallmentNumber,
+            currentInstallmentDate: input.entryDate,
+          }),
+        })
+      : await fetch("/api/entries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entryType: input.entryType,
+            entryDate: input.entryDate,
+            description: input.description,
+            amount,
+            categoryId: input.entryType === "expense" ? input.categoryId : null,
+            paymentSourceId: input.paymentSourceId || null,
+            ledgerId: input.ledgerId,
+          }),
+        });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setError(data.error ?? "Não foi possível lançar.");
@@ -531,7 +547,17 @@ function LedgerPanel({
                   ) : (
                     <tr key={entry.id} className="group border-t border-border">
                       <td className="py-2">{entry.entry_date.slice(0, 10).split("-").reverse().join("/")}</td>
-                      <td className="py-2">{entry.description}</td>
+                      <td className="py-2">
+                        {entry.description}
+                        {entry.installment_plan_id && (
+                          <span
+                            className="ml-1 text-xs text-muted"
+                            title={`Parcela ${entry.installment_number}/${entry.total_installments}`}
+                          >
+                            🔁
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2">{entry.category_name ?? "—"}</td>
                       <td className="py-2">{entry.payment_source_name ?? "—"}</td>
                       <td
@@ -846,10 +872,14 @@ function EntryForm({
     categoryId: string;
     paymentSourceId: string;
     ledgerId: string;
+    installment: { totalInstallments: number; currentInstallmentNumber: number } | null;
   }) => void;
   onCancel: () => void;
 }) {
   const [entryType, setEntryType] = useState<EntryType>("expense");
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [totalInstallments, setTotalInstallments] = useState("2");
+  const [currentInstallmentNumber, setCurrentInstallmentNumber] = useState("1");
   // Default to today only when today actually falls in the month being
   // viewed — otherwise default to day 1 of that month. Always defaulting to
   // "today" silently misfiled entries into the wrong month when adding one
@@ -875,7 +905,22 @@ function EntryForm({
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        onSubmit({ entryType, entryDate, description, amount, categoryId, paymentSourceId, ledgerId });
+        onSubmit({
+          entryType,
+          entryDate,
+          description,
+          amount,
+          categoryId,
+          paymentSourceId,
+          ledgerId,
+          installment:
+            entryType === "expense" && isInstallment
+              ? {
+                  totalInstallments: Number(totalInstallments),
+                  currentInstallmentNumber: Number(currentInstallmentNumber),
+                }
+              : null,
+        });
       }}
       className="mb-4 flex flex-col gap-2 rounded-lg border border-border-strong bg-card p-3"
     >
@@ -918,12 +963,51 @@ function EntryForm({
           type="text"
           inputMode="decimal"
           required
-          placeholder="Valor"
+          placeholder={isInstallment ? "Valor da parcela" : "Valor"}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           className="money min-h-11 w-28 rounded-lg border border-border-strong px-2 text-sm"
         />
       </div>
+
+      {entryType === "expense" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              checked={isInstallment}
+              onChange={(e) => setIsInstallment(e.target.checked)}
+            />
+            Compra parcelada
+          </label>
+          {isInstallment && (
+            <>
+              <label className="flex items-center gap-1 text-xs text-muted">
+                parcela
+                <input
+                  type="number"
+                  min={1}
+                  required
+                  value={currentInstallmentNumber}
+                  onChange={(e) => setCurrentInstallmentNumber(e.target.value)}
+                  className="min-h-9 w-14 rounded border border-border-strong px-1 text-center text-sm"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-xs text-muted">
+                de
+                <input
+                  type="number"
+                  min={2}
+                  required
+                  value={totalInstallments}
+                  onChange={(e) => setTotalInstallments(e.target.value)}
+                  className="min-h-9 w-14 rounded border border-border-strong px-1 text-center text-sm"
+                />
+              </label>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {ledgers.length > 1 && (

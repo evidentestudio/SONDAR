@@ -208,6 +208,8 @@ export function ReviewModal({
             categoryId: r.categoryId || null,
             paymentSourceId: r.paymentSourceId || null,
             needsReview: r.needsReview,
+            installmentCurrent: r.installmentTotal ? r.installmentCurrent : null,
+            installmentTotal: r.installmentTotal,
           })),
         }),
       });
@@ -371,9 +373,26 @@ export function ReviewModal({
                         Regra aplicada
                       </span>
                     )}
-                    {(row.installmentCurrent ?? 1) > 0 && row.installmentTotal && (
-                      <span className="rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft">
-                        Parcela {row.installmentCurrent}/{row.installmentTotal}
+                    {row.installmentTotal && (
+                      <span className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft">
+                        Parcela
+                        <input
+                          type="number"
+                          min={1}
+                          max={row.installmentTotal}
+                          value={row.installmentCurrent ?? 1}
+                          onChange={(e) =>
+                            updateRow(row.key, {
+                              installmentCurrent: Math.min(
+                                Math.max(1, Number(e.target.value) || 1),
+                                row.installmentTotal!,
+                              ),
+                            })
+                          }
+                          className="w-10 rounded border border-border-strong bg-card px-1 text-center"
+                          title="A IA às vezes só sabe o total de parcelas, não qual está em andamento — corrija se necessário"
+                        />
+                        /{row.installmentTotal}
                       </span>
                     )}
                   </div>

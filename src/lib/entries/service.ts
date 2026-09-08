@@ -19,6 +19,9 @@ export type EntryRow = {
   review_status: string;
   input_method: string;
   created_at: string;
+  installment_plan_id: string | null;
+  installment_number: number | null;
+  total_installments: number | null;
 };
 
 export async function listEntries(
@@ -42,10 +45,12 @@ export async function listEntries(
        e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
        e.category_id, c.name AS category_name,
        e.payment_source_id, ps.name AS payment_source_name,
-       e.review_status, e.input_method, e.created_at
+       e.review_status, e.input_method, e.created_at,
+       e.installment_plan_id, e.installment_number, ip.total_installments
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
+     LEFT JOIN installment_plans ip ON ip.id = e.installment_plan_id
      WHERE e.household_id = $1 AND e.ledger_id = $2 AND e.deleted_at IS NULL
        AND e.entry_date >= $3::date AND e.entry_date < $4::date
        ${paymentSourceClause}
@@ -69,6 +74,11 @@ export type CreateEntryInput = {
   createdBy?: string | null;
   inputMethod?: InputMethod;
   reviewStatus?: ReviewStatus;
+  /** Set only by lib/installment-plans/service.ts — links this entry to its
+   * parcela plan. Never set directly from a route: createInstallmentPlan is
+   * the only caller that should ever pass these. */
+  installmentPlanId?: string | null;
+  installmentNumber?: number | null;
 };
 
 export type CreateEntryResult =
@@ -119,8 +129,8 @@ export async function createEntry(
 
   const { rows } = await db<{ id: string }>(
     `INSERT INTO financial_entries
-       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by, installment_plan_id, installment_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id`,
     [
       householdId,
@@ -134,6 +144,8 @@ export async function createEntry(
       input.inputMethod ?? "manual",
       input.reviewStatus ?? "confirmed",
       input.createdBy ?? null,
+      input.installmentPlanId ?? null,
+      input.installmentNumber ?? null,
     ],
   );
   return { status: "created", entry: rows[0] };

@@ -39,6 +39,16 @@ export function addMonthsToKey(monthKey: string, delta: number): string {
   return `${newYear}-${String(newMonth).padStart(2, "0")}`;
 }
 
+/** How many months lie between two month keys (positive when `toKey` is later). */
+export function monthsBetween(fromKey: string, toKey: string): number {
+  if (!isValidMonthKey(fromKey) || !isValidMonthKey(toKey)) {
+    throw new Error(`Invalid month key: ${fromKey} / ${toKey}`);
+  }
+  const fromTotal = Number(fromKey.slice(0, 4)) * 12 + (Number(fromKey.slice(5, 7)) - 1);
+  const toTotal = Number(toKey.slice(0, 4)) * 12 + (Number(toKey.slice(5, 7)) - 1);
+  return toTotal - fromTotal;
+}
+
 export function previousMonthKey(monthKey: string): string {
   return addMonthsToKey(monthKey, -1);
 }

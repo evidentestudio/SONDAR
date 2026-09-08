@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout"];
+// /api/cron/advance-installments is called by Vercel Cron, which carries no
+// session cookie — only its own "Authorization: Bearer $CRON_SECRET" header,
+// checked inside the route handler itself. Without this exemption the proxy
+// would redirect that request to /login before the route ever ran it.
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/cron/advance-installments"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

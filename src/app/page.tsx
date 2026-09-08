@@ -46,6 +46,9 @@ export default async function Home() {
           <Link href="/ledgers" className="text-sm text-accent-dark hover:underline">
             Orçamentos
           </Link>
+          <Link href="/installment-plans" className="text-sm text-accent-dark hover:underline">
+            Parcelamentos
+          </Link>
         </div>
         <div className="flex items-center gap-4 text-sm text-ink-soft">
           <span>{session.displayName ?? session.email}</span>

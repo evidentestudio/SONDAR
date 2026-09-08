@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createEntry, checkPossibleDuplicate } from "@/lib/entries/service";
 import type { InputMethod } from "@/lib/entries/service";
+import { createInstallmentPlan } from "@/lib/installment-plans/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 
 type BatchItem = {
@@ -12,6 +13,8 @@ type BatchItem = {
   ledgerId?: string | null;
   paymentSourceId?: string | null;
   needsReview: boolean;
+  installmentCurrent?: number | null;
+  installmentTotal?: number | null;
 };
 
 export async function POST(request: Request) {
@@ -40,18 +43,36 @@ export async function POST(request: Request) {
         ? "possible_duplicate"
         : "confirmed";
 
-    const result = await createEntry(session.householdId, {
-      ledgerId,
-      entryType: "expense",
-      entryDate: item.date,
-      description: item.description,
-      amount: item.amount,
-      categoryId: item.categoryId,
-      paymentSourceId: item.paymentSourceId ?? null,
-      createdBy: session.userId,
-      inputMethod: sourceType,
-      reviewStatus,
-    });
+    // Compras parceladas (identificadas pela IA, section 4 do prompt) viram
+    // um installment_plans + a entrada da parcela atual, não um lançamento
+    // solto — as parcelas seguintes são criadas pelo job mensal.
+    const result =
+      item.installmentTotal && item.installmentTotal > 1
+        ? await createInstallmentPlan(session.householdId, {
+            ledgerId,
+            description: item.description,
+            categoryId: item.categoryId,
+            paymentSourceId: item.paymentSourceId ?? null,
+            installmentAmount: item.amount,
+            totalInstallments: item.installmentTotal,
+            currentInstallmentNumber: item.installmentCurrent ?? 1,
+            currentInstallmentDate: item.date,
+            createdBy: session.userId,
+            inputMethod: sourceType,
+            reviewStatus,
+          }).then((r) => (r.status === "created" ? { status: "created" as const, entry: { id: r.entryId } } : r))
+        : await createEntry(session.householdId, {
+            ledgerId,
+            entryType: "expense",
+            entryDate: item.date,
+            description: item.description,
+            amount: item.amount,
+            categoryId: item.categoryId,
+            paymentSourceId: item.paymentSourceId ?? null,
+            createdBy: session.userId,
+            inputMethod: sourceType,
+            reviewStatus,
+          });
 
     if (result.status === "error") {
       errors.push({ index, message: result.message });
