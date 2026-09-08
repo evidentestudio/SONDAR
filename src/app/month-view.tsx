@@ -268,48 +268,6 @@ export function MonthView({
         />
       </div>
 
-      <div className="flex flex-col rounded-xl border border-border bg-card">
-        {categories.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted">
-            Nenhuma categoria ainda. Crie em &ldquo;Categorias&rdquo;.
-          </p>
-        )}
-        {categories.map((cat) => (
-          <CategorySummaryRow
-            key={cat.id}
-            node={cat}
-            depth={0}
-            isExpanded={expanded.has(cat.id)}
-            onToggleExpand={() => toggleExpanded(cat.id)}
-            editingBudget={editingBudget}
-            onStartEditBudget={(key, categoryId, current) =>
-              setEditingBudget({ key, categoryId, value: current > 0 ? String(current) : "" })
-            }
-            onChangeEditBudget={(value) => setEditingBudget((e) => (e ? { ...e, value } : e))}
-            onCancelEditBudget={() => setEditingBudget(null)}
-            onSubmitEditBudget={() =>
-              editingBudget && submitBudget(editingBudget.categoryId, editingBudget.value)
-            }
-          />
-        ))}
-      </div>
-
-      <div className="rounded-xl border border-border bg-card p-4">
-        <h3 className="mb-3 font-serif text-lg text-ink">Total por origem</h3>
-        {paymentSourceTotals.length === 0 ? (
-          <p className="text-sm text-muted">Nenhum lançamento com origem definida neste mês.</p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {paymentSourceTotals.map((p) => (
-              <li key={p.paymentSourceId} className="flex items-center justify-between text-sm">
-                <span className="text-ink-soft">{p.paymentSourceName}</span>
-                <span className="money text-ink">{formatBRL(p.total)}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-serif text-lg text-ink">Lançamentos</h3>
@@ -487,6 +445,59 @@ export function MonthView({
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      <div className="flex flex-col rounded-xl border border-border bg-card">
+        {categories.length === 0 && (
+          <p className="px-4 py-6 text-center text-sm text-muted">
+            Nenhuma categoria ainda. Crie em &ldquo;Categorias&rdquo;.
+          </p>
+        )}
+        {categories.length > 0 && (
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2 text-xs uppercase tracking-wide text-muted">
+            <span>Categoria</span>
+            <div className="flex items-center gap-4">
+              <span className="w-24 text-right">Orçado</span>
+              <span className="w-24 text-right">Gasto</span>
+              <span className="w-16" aria-hidden />
+              <span className="w-2" aria-hidden />
+            </div>
+          </div>
+        )}
+        {categories.map((cat) => (
+          <CategorySummaryRow
+            key={cat.id}
+            node={cat}
+            depth={0}
+            isExpanded={expanded.has(cat.id)}
+            onToggleExpand={() => toggleExpanded(cat.id)}
+            editingBudget={editingBudget}
+            onStartEditBudget={(key, categoryId, current) =>
+              setEditingBudget({ key, categoryId, value: current > 0 ? String(current) : "" })
+            }
+            onChangeEditBudget={(value) => setEditingBudget((e) => (e ? { ...e, value } : e))}
+            onCancelEditBudget={() => setEditingBudget(null)}
+            onSubmitEditBudget={() =>
+              editingBudget && submitBudget(editingBudget.categoryId, editingBudget.value)
+            }
+          />
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <h3 className="mb-3 font-serif text-lg text-ink">Total por origem</h3>
+        {paymentSourceTotals.length === 0 ? (
+          <p className="text-sm text-muted">Nenhum lançamento com origem definida neste mês.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {paymentSourceTotals.map((p) => (
+              <li key={p.paymentSourceId} className="flex items-center justify-between text-sm">
+                <span className="text-ink-soft">{p.paymentSourceName}</span>
+                <span className="money text-ink">{formatBRL(p.total)}</span>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
