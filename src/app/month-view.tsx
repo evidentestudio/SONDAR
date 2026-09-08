@@ -651,7 +651,6 @@ function LedgerPanel({
         <ReviewModal
           ledgers={ledgers}
           defaultLedgerId={ledgerId}
-          initialLeaves={leaves}
           paymentSources={paymentSources}
           onClose={() => setShowReview(false)}
           onSaved={() => {

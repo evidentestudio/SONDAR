@@ -3,11 +3,11 @@
 import { useRef, useState } from "react";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
+import type { CategoryNode } from "@/lib/categories/service";
 import { formatBRL, parseBRLAmount, toAmountInputValue } from "@/lib/format";
-import { fetchLedgerLeaves } from "@/lib/client/ledger-categories";
+import { fetchLedgerCategoryTree, flattenLeaves } from "@/lib/client/ledger-categories";
 
 type SourceType = "image" | "text";
-type LeafOption = { id: string; name: string };
 
 type UploadedImage = { data: string; mediaType: string; previewUrl: string };
 
@@ -38,14 +38,12 @@ function suggestPattern(description: string): string {
 export function ReviewModal({
   ledgers,
   defaultLedgerId,
-  initialLeaves,
   paymentSources,
   onClose,
   onSaved,
 }: {
   ledgers: LedgerRow[];
   defaultLedgerId: string;
-  initialLeaves: LeafOption[];
   paymentSources: PaymentSourceRow[];
   onClose: () => void;
   onSaved: () => void;
@@ -57,15 +55,22 @@ export function ReviewModal({
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [leavesCache, setLeavesCache] = useState<Record<string, LeafOption[]>>({
-    [defaultLedgerId]: initialLeaves,
-  });
+  const [treeCache, setTreeCache] = useState<Record<string, CategoryNode[]>>({});
   const [ruleForm, setRuleForm] = useState<{
     rowKey: string;
     pattern: string;
     ledgerId: string;
     categoryId: string;
     isAmbiguous: boolean;
+  } | null>(null);
+  const [newCategoryForm, setNewCategoryForm] = useState<{
+    rowKey: string;
+    ledgerId: string;
+    name: string;
+    parentId: string;
+    isReserve: boolean;
+    error: string | null;
+    saving: boolean;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,6 +110,7 @@ export function ReviewModal({
         setError(data.error ?? "Não foi possível processar.");
         return;
       }
+      await ensureTree(defaultLedgerId);
       setRows(
         data.items.map(
           (
@@ -158,19 +164,51 @@ export function ReviewModal({
     setRows((prev) => (prev ? prev.filter((r) => r.key !== key) : prev));
   }
 
-  async function ensureLeaves(ledgerId: string): Promise<LeafOption[]> {
-    if (leavesCache[ledgerId]) return leavesCache[ledgerId];
-    const fetched = await fetchLedgerLeaves(ledgerId);
-    setLeavesCache((prev) => ({ ...prev, [ledgerId]: fetched }));
+  async function ensureTree(ledgerId: string, forceRefresh = false): Promise<CategoryNode[]> {
+    if (!forceRefresh && treeCache[ledgerId]) return treeCache[ledgerId];
+    const fetched = await fetchLedgerCategoryTree(ledgerId);
+    setTreeCache((prev) => ({ ...prev, [ledgerId]: fetched }));
     return fetched;
   }
 
   async function changeRowLedger(key: string, ledgerId: string) {
-    const leaves = await ensureLeaves(ledgerId);
+    const tree = await ensureTree(ledgerId);
     // The chosen category almost certainly doesn't exist in the new
     // ledger's independent category tree — reset it so nothing gets saved
     // against a category that belongs to a different orçamento.
-    updateRow(key, { ledgerId, categoryId: leaves[0]?.id ?? "" });
+    updateRow(key, { ledgerId, categoryId: flattenLeaves(tree)[0]?.id ?? "" });
+  }
+
+  async function submitNewCategory() {
+    if (!newCategoryForm) return;
+    const name = newCategoryForm.name.trim();
+    if (!name) {
+      setNewCategoryForm({ ...newCategoryForm, error: "Nome não pode ser vazio." });
+      return;
+    }
+    setNewCategoryForm({ ...newCategoryForm, saving: true, error: null });
+    const res = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        ledgerId: newCategoryForm.ledgerId,
+        parentId: newCategoryForm.parentId || null,
+        categoryType: newCategoryForm.parentId ? "normal" : newCategoryForm.isReserve ? "reserve" : "normal",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setNewCategoryForm({
+        ...newCategoryForm,
+        saving: false,
+        error: data.message ?? data.error ?? "Não foi possível criar.",
+      });
+      return;
+    }
+    await ensureTree(newCategoryForm.ledgerId, true);
+    updateRow(newCategoryForm.rowKey, { categoryId: data.category.id });
+    setNewCategoryForm(null);
   }
 
   async function submitRule() {
@@ -349,7 +387,9 @@ export function ReviewModal({
                 </p>
               )}
               {rows.map((row) => {
-                const rowLeaves = leavesCache[row.ledgerId] ?? [];
+                const rowTree = treeCache[row.ledgerId] ?? [];
+                const rowLeaves = flattenLeaves(rowTree);
+                const topLevelCategories = rowTree.filter((c) => c.category_type === "normal");
                 return (
                 <div key={row.key} className="rounded-lg border border-border-strong p-3">
                   <div className="mb-2 flex flex-wrap gap-2">
@@ -477,6 +517,23 @@ export function ReviewModal({
                     <button
                       type="button"
                       onClick={() =>
+                        setNewCategoryForm({
+                          rowKey: row.key,
+                          ledgerId: row.ledgerId,
+                          name: "",
+                          parentId: "",
+                          isReserve: false,
+                          error: null,
+                          saving: false,
+                        })
+                      }
+                      className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                    >
+                      + Nova categoria
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
                         setRuleForm({
                           rowKey: row.key,
                           pattern: suggestPattern(row.description),
@@ -497,6 +554,65 @@ export function ReviewModal({
                       Remover
                     </button>
                   </div>
+
+                  {newCategoryForm?.rowKey === row.key && (
+                    <div className="mt-2 flex flex-col gap-2 rounded-lg bg-accent-light p-2">
+                      {newCategoryForm.error && (
+                        <p className="text-xs text-rust">{newCategoryForm.error}</p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={newCategoryForm.name}
+                          onChange={(e) => setNewCategoryForm({ ...newCategoryForm, name: e.target.value })}
+                          placeholder="Nome da categoria"
+                          className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
+                        />
+                        <select
+                          value={newCategoryForm.parentId}
+                          onChange={(e) => setNewCategoryForm({ ...newCategoryForm, parentId: e.target.value })}
+                          className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                        >
+                          <option value="">— categoria própria (sem categoria-mãe) —</option>
+                          {topLevelCategories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              subcategoria de: {c.name}
+                            </option>
+                          ))}
+                        </select>
+                        {!newCategoryForm.parentId && (
+                          <label className="flex items-center gap-1 text-xs text-ink-soft">
+                            <input
+                              type="checkbox"
+                              checked={newCategoryForm.isReserve}
+                              onChange={(e) =>
+                                setNewCategoryForm({ ...newCategoryForm, isReserve: e.target.checked })
+                              }
+                            />
+                            é uma reserva
+                          </label>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={newCategoryForm.saving}
+                          onClick={submitNewCategory}
+                          className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white disabled:opacity-50"
+                        >
+                          {newCategoryForm.saving ? "Criando..." : "Criar e usar aqui"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewCategoryForm(null)}
+                          className="min-h-11 rounded-lg px-3 text-sm text-muted"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {ruleForm?.rowKey === row.key && (
                     <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-accent-light p-2">
