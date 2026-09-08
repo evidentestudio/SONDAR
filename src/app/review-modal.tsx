@@ -301,12 +301,8 @@ export function ReviewModal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(30,42,37,0.45)" }}
-      onClick={onClose}
     >
-      <div
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-card shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <h2 className="font-serif text-lg text-ink">Processar fatura</h2>
           <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg text-muted">
