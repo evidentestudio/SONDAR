@@ -4,7 +4,7 @@ import { createCategory, ensureAwaitingReviewCategory } from "@/lib/categories/s
 import {
   advanceInstallmentsForMonth,
   createInstallmentPlan,
-  getInstallmentForecast,
+  getInstallmentForecastGrid,
   listInstallmentPlans,
   stopInstallmentPlan,
 } from "@/lib/installment-plans/service";
@@ -214,7 +214,7 @@ describe("parcelamentos — Etapa 4", () => {
   });
 
   describe("projeção de parcelas", () => {
-    it("projeta as parcelas futuras, excluindo a que já virou lançamento real", async () => {
+    it("grade inclui o mês inicial (já real) e os futuros (previsto)", async () => {
       const created = await createInstallmentPlan(householdId, {
         ledgerId,
         description: "Notebook Parcelado",
@@ -226,17 +226,17 @@ describe("parcelamentos — Etapa 4", () => {
       });
       if (created.status !== "created") throw new Error("setup failed");
 
-      const forecast = await getInstallmentForecast(householdId, ledgerId);
-      const mine = forecast.filter((f) => f.planId === created.plan.id);
+      const grid = await getInstallmentForecastGrid(householdId, ledgerId, { fromMonth: "2026-09" });
+      const row = grid.plans.find((p) => p.planId === created.plan.id)!;
 
-      // parcela 1 já é lançamento real (criada junto com o plano) — não deve
-      // aparecer na projeção, só 2 e 3.
-      expect(mine.map((f) => f.installmentNumber)).toEqual([2, 3]);
-      expect(mine.map((f) => f.month)).toEqual(["2026-10", "2026-11"]);
-      expect(mine.every((f) => f.amount === 100)).toBe(true);
+      expect(row.cells.map((c) => c.month)).toEqual(["2026-09", "2026-10", "2026-11"]);
+      expect(row.cells[0]).toMatchObject({ isReal: true, installmentNumber: 1, amount: 100 });
+      expect(row.cells[1]).toMatchObject({ isReal: false, installmentNumber: 2, amount: 100 });
+      expect(row.cells[2]).toMatchObject({ isReal: false, installmentNumber: 3, amount: 100 });
+      expect(grid.totalsByMonth["2026-09"]).toBeGreaterThanOrEqual(100);
     });
 
-    it("some da projeção o mês que já foi lançado de verdade pelo avanço automático", async () => {
+    it("marca como real o mês já lançado pelo avanço automático", async () => {
       const created = await createInstallmentPlan(householdId, {
         ledgerId,
         description: "Curso Parcelado",
@@ -250,11 +250,31 @@ describe("parcelamentos — Etapa 4", () => {
 
       await advanceInstallmentsForMonth("2026-10");
 
-      const forecast = await getInstallmentForecast(householdId, ledgerId);
-      const mine = forecast.filter((f) => f.planId === created.plan.id);
+      const grid = await getInstallmentForecastGrid(householdId, ledgerId, { fromMonth: "2026-09" });
+      const row = grid.plans.find((p) => p.planId === created.plan.id)!;
 
-      // outubro já virou lançamento real — só novembro e dezembro na projeção.
-      expect(mine.map((f) => f.month)).toEqual(["2026-11", "2026-12"]);
+      expect(row.cells.map((c) => ({ month: c.month, isReal: c.isReal }))).toEqual([
+        { month: "2026-09", isReal: true },
+        { month: "2026-10", isReal: true },
+        { month: "2026-11", isReal: false },
+        { month: "2026-12", isReal: false },
+      ]);
+    });
+
+    it("não inclui plano já totalmente concluído antes do mês inicial", async () => {
+      const created = await createInstallmentPlan(householdId, {
+        ledgerId,
+        description: "Compra Já Quitada",
+        categoryId: assinaturasId,
+        installmentAmount: 10,
+        totalInstallments: 2,
+        currentInstallmentNumber: 2,
+        currentInstallmentDate: "2026-09-01",
+      });
+      if (created.status !== "created") throw new Error("setup failed");
+
+      const grid = await getInstallmentForecastGrid(householdId, ledgerId, { fromMonth: "2026-10" });
+      expect(grid.plans.find((p) => p.planId === created.plan.id)).toBeUndefined();
     });
 
     it("filtra a projeção por forma de pagamento", async () => {
@@ -274,15 +294,17 @@ describe("parcelamentos — Etapa 4", () => {
       });
       if (created.status !== "created") throw new Error("setup failed");
 
-      const matching = await getInstallmentForecast(householdId, ledgerId, {
+      const matching = await getInstallmentForecastGrid(householdId, ledgerId, {
         paymentSourceId: pix.source.id,
+        fromMonth: "2026-09",
       });
-      expect(matching.some((f) => f.planId === created.plan.id)).toBe(true);
+      expect(matching.plans.some((p) => p.planId === created.plan.id)).toBe(true);
 
-      const other = await getInstallmentForecast(householdId, ledgerId, {
+      const other = await getInstallmentForecastGrid(householdId, ledgerId, {
         paymentSourceId: cartao.source.id,
+        fromMonth: "2026-09",
       });
-      expect(other.some((f) => f.planId === created.plan.id)).toBe(false);
+      expect(other.plans.some((p) => p.planId === created.plan.id)).toBe(false);
     });
   });
 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
-import { getInstallmentForecast } from "@/lib/installment-plans/service";
+import { getInstallmentForecastGrid } from "@/lib/installment-plans/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 
 export async function GET(request: Request) {
@@ -11,6 +11,6 @@ export async function GET(request: Request) {
   const ledgerId = await resolveLedgerId(session.householdId, searchParams.get("ledgerId"));
   const paymentSourceId = searchParams.get("paymentSourceId") || undefined;
 
-  const forecast = await getInstallmentForecast(session.householdId, ledgerId, { paymentSourceId });
-  return NextResponse.json({ forecast });
+  const grid = await getInstallmentForecastGrid(session.householdId, ledgerId, { paymentSourceId });
+  return NextResponse.json(grid);
 }
