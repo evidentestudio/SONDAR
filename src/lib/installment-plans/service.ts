@@ -155,6 +155,85 @@ export async function listInstallmentPlans(
   return rows;
 }
 
+export type ForecastEntry = {
+  planId: string;
+  month: string; // YYYY-MM
+  description: string;
+  categoryName: string;
+  paymentSourceId: string | null;
+  paymentSourceName: string | null;
+  installmentNumber: number;
+  totalInstallments: number;
+  amount: number;
+};
+
+/**
+ * Projeta as parcelas futuras de cada plano ativo (sem gravar nada — é só
+ * leitura), pra dar uma visão de quanto ainda falta pagar mês a mês, sem
+ * precisar esperar o mês virar de verdade nem usar o botão de teste. Meses
+ * que já têm lançamento real (criado manualmente ou pelo avanço automático)
+ * são pulados, pra nunca mostrar como "previsto" algo que já é confirmado.
+ */
+export async function getInstallmentForecast(
+  householdId: string,
+  ledgerId: string,
+  filters?: { paymentSourceId?: string },
+): Promise<ForecastEntry[]> {
+  const values: unknown[] = [householdId, ledgerId];
+  let paymentSourceClause = "";
+  if (filters?.paymentSourceId) {
+    values.push(filters.paymentSourceId);
+    paymentSourceClause = `AND p.payment_source_id = $${values.length}`;
+  }
+
+  const { rows: plans } = await db<
+    InstallmentPlanRow & { payment_source_name: string | null }
+  >(
+    `SELECT p.*, c.name AS category_name, ps.name AS payment_source_name
+     FROM installment_plans p
+     JOIN categories c ON c.id = p.category_id
+     LEFT JOIN payment_sources ps ON ps.id = p.payment_source_id
+     WHERE p.household_id = $1 AND p.ledger_id = $2 AND p.deleted_at IS NULL
+       ${paymentSourceClause}`,
+    values,
+  );
+  if (plans.length === 0) return [];
+
+  const { rows: lastRealRows } = await db<{ installment_plan_id: string; last_month: string }>(
+    `SELECT installment_plan_id, to_char(max(entry_date), 'YYYY-MM') AS last_month
+     FROM financial_entries
+     WHERE installment_plan_id = ANY($1::uuid[]) AND deleted_at IS NULL
+     GROUP BY installment_plan_id`,
+    [plans.map((p) => p.id)],
+  );
+  const lastRealMonthByPlan = new Map(lastRealRows.map((r) => [r.installment_plan_id, r.last_month]));
+
+  const forecast: ForecastEntry[] = [];
+  for (const plan of plans) {
+    const anchorMonthKey = dbDateToMonthKey(plan.anchor_month);
+    const lastRealMonth = lastRealMonthByPlan.get(plan.id) ?? null;
+
+    for (let n = 1; n <= plan.total_installments; n++) {
+      const monthKey = addMonthsToKey(anchorMonthKey, n - 1);
+      if (lastRealMonth && monthKey <= lastRealMonth) continue;
+      forecast.push({
+        planId: plan.id,
+        month: monthKey,
+        description: plan.description,
+        categoryName: plan.category_name,
+        paymentSourceId: plan.payment_source_id,
+        paymentSourceName: plan.payment_source_name,
+        installmentNumber: n,
+        totalInstallments: plan.total_installments,
+        amount: Number(plan.installment_amount),
+      });
+    }
+  }
+
+  forecast.sort((a, b) => a.month.localeCompare(b.month) || a.description.localeCompare(b.description));
+  return forecast;
+}
+
 export type StopInstallmentPlanResult = { status: "stopped" } | { status: "error"; message: string };
 
 /**

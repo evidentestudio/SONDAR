@@ -82,6 +82,7 @@ export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWit
         {advanceResult && <p className="text-xs text-ink-soft">{advanceResult}</p>}
       </div>
 
+      <h2 className="font-serif text-lg text-ink">Parcelamentos ativos</h2>
       <div className="flex flex-col rounded-xl border border-border bg-card">
         {plans.length === 0 && (
           <p className="px-4 py-6 text-center text-sm text-muted">Nenhum parcelamento ativo.</p>

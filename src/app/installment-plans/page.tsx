@@ -3,8 +3,10 @@ import Link from "next/link";
 import { getSession } from "@/lib/auth/current";
 import { listInstallmentPlans } from "@/lib/installment-plans/service";
 import { ensureDefaultLedger, listLedgers } from "@/lib/ledgers/service";
+import { listPaymentSources } from "@/lib/payment-sources/service";
 import { currentMonthKey, dbDateToMonthKey, monthsBetween } from "@/lib/date";
 import { InstallmentPlanManager } from "./installment-plan-manager";
+import { InstallmentForecast } from "./installment-forecast";
 
 export default async function InstallmentPlansPage({
   searchParams,
@@ -22,6 +24,7 @@ export default async function InstallmentPlansPage({
     : (ledgers.find((l) => l.is_default) ?? ledgers[0]).id;
 
   const plans = await listInstallmentPlans(session.householdId, ledgerId);
+  const paymentSources = await listPaymentSources(session.householdId);
   const month = currentMonthKey();
   const plansWithProgress = plans.map((p) => ({
     ...p,
@@ -63,6 +66,8 @@ export default async function InstallmentPlansPage({
             ))}
           </div>
         )}
+        <InstallmentForecast ledgerId={ledgerId} paymentSources={paymentSources} />
+
         <InstallmentPlanManager initialPlans={plansWithProgress} />
       </main>
     </div>

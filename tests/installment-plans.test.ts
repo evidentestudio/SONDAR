@@ -4,9 +4,11 @@ import { createCategory, ensureAwaitingReviewCategory } from "@/lib/categories/s
 import {
   advanceInstallmentsForMonth,
   createInstallmentPlan,
+  getInstallmentForecast,
   listInstallmentPlans,
   stopInstallmentPlan,
 } from "@/lib/installment-plans/service";
+import { createPaymentSource } from "@/lib/payment-sources/service";
 import { dbDateToMonthKey } from "@/lib/date";
 
 const pool = getPool();
@@ -209,5 +211,78 @@ describe("parcelamentos — Etapa 4", () => {
       [created.plan.id],
     );
     expect(rows[0].category_id).toBe(awaitingReviewId);
+  });
+
+  describe("projeção de parcelas", () => {
+    it("projeta as parcelas futuras, excluindo a que já virou lançamento real", async () => {
+      const created = await createInstallmentPlan(householdId, {
+        ledgerId,
+        description: "Notebook Parcelado",
+        categoryId: assinaturasId,
+        installmentAmount: 100,
+        totalInstallments: 3,
+        currentInstallmentNumber: 1,
+        currentInstallmentDate: "2026-09-05",
+      });
+      if (created.status !== "created") throw new Error("setup failed");
+
+      const forecast = await getInstallmentForecast(householdId, ledgerId);
+      const mine = forecast.filter((f) => f.planId === created.plan.id);
+
+      // parcela 1 já é lançamento real (criada junto com o plano) — não deve
+      // aparecer na projeção, só 2 e 3.
+      expect(mine.map((f) => f.installmentNumber)).toEqual([2, 3]);
+      expect(mine.map((f) => f.month)).toEqual(["2026-10", "2026-11"]);
+      expect(mine.every((f) => f.amount === 100)).toBe(true);
+    });
+
+    it("some da projeção o mês que já foi lançado de verdade pelo avanço automático", async () => {
+      const created = await createInstallmentPlan(householdId, {
+        ledgerId,
+        description: "Curso Parcelado",
+        categoryId: assinaturasId,
+        installmentAmount: 40,
+        totalInstallments: 4,
+        currentInstallmentNumber: 1,
+        currentInstallmentDate: "2026-09-01",
+      });
+      if (created.status !== "created") throw new Error("setup failed");
+
+      await advanceInstallmentsForMonth("2026-10");
+
+      const forecast = await getInstallmentForecast(householdId, ledgerId);
+      const mine = forecast.filter((f) => f.planId === created.plan.id);
+
+      // outubro já virou lançamento real — só novembro e dezembro na projeção.
+      expect(mine.map((f) => f.month)).toEqual(["2026-11", "2026-12"]);
+    });
+
+    it("filtra a projeção por forma de pagamento", async () => {
+      const pix = await createPaymentSource(householdId, { name: "Pix Projeção Teste" });
+      const cartao = await createPaymentSource(householdId, { name: "Cartão Projeção Teste" });
+      if (pix.status !== "created" || cartao.status !== "created") throw new Error("setup failed");
+
+      const created = await createInstallmentPlan(householdId, {
+        ledgerId,
+        description: "Compra no Pix Parcelado",
+        categoryId: assinaturasId,
+        paymentSourceId: pix.source.id,
+        installmentAmount: 25,
+        totalInstallments: 3,
+        currentInstallmentNumber: 1,
+        currentInstallmentDate: "2026-09-01",
+      });
+      if (created.status !== "created") throw new Error("setup failed");
+
+      const matching = await getInstallmentForecast(householdId, ledgerId, {
+        paymentSourceId: pix.source.id,
+      });
+      expect(matching.some((f) => f.planId === created.plan.id)).toBe(true);
+
+      const other = await getInstallmentForecast(householdId, ledgerId, {
+        paymentSourceId: cartao.source.id,
+      });
+      expect(other.some((f) => f.planId === created.plan.id)).toBe(false);
+    });
   });
 });
