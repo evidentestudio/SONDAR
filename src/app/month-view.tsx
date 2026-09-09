@@ -557,16 +557,23 @@ function LedgerPanel({
               )}
             </div>
 
-            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
-              <span>
-                {hasActiveFilter ? "Total no filtro" : "Total geral"}: gasto{" "}
-                <span className="money text-ink">{formatBRL(filteredGasto)}</span> · créditos{" "}
-                <span className="money text-ink">{formatBRL(filteredCredito)}</span>
-              </span>
-              <span className="text-muted">
-                {filteredEntries.length} de {entries.length} lançamento(s)
-              </span>
-            </div>
+            {hasActiveFilter && (
+              <div className="mb-3 flex flex-wrap items-center gap-6 rounded-lg border border-accent bg-accent-light px-4 py-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-accent-dark">Gasto no filtro</p>
+                  <p className="money text-2xl text-ink">{formatBRL(filteredGasto)}</p>
+                </div>
+                {filteredCredito > 0 && (
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-accent-dark">Créditos no filtro</p>
+                    <p className="money text-2xl text-ink">{formatBRL(filteredCredito)}</p>
+                  </div>
+                )}
+                <span className="text-xs text-ink-soft">
+                  {filteredEntries.length} de {entries.length} lançamento(s)
+                </span>
+              </div>
+            )}
 
             {filteredEntries.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted">
