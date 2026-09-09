@@ -48,7 +48,7 @@ describe("regras de estabelecimento", () => {
     expect(match).toEqual({
       type: "matched",
       categoryId: mercadoId,
-      categoryName: "Mercado",
+      categoryName: "MERCADO",
       ruleId: expect.any(String),
       pattern: "ifood",
     });

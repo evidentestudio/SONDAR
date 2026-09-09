@@ -28,6 +28,11 @@ type DraftRow = {
   installmentTotal: number | null;
   paymentSourceId: string;
   savingRule: boolean;
+  /** categoryId a saved merchant rule targets for this row, or null if none
+   * saved yet — compared against the row's current categoryId to know
+   * whether "Salvar regra" should be disabled (matches) or re-enabled
+   * (user picked a different category since). */
+  ruleSavedForCategoryId: string | null;
 };
 
 function suggestPattern(description: string): string {
@@ -145,8 +150,9 @@ export function ReviewModal({
             matchedRuleId: item.matchedRuleId,
             installmentCurrent: item.installmentCurrent,
             installmentTotal: item.installmentTotal,
-            paymentSourceId: "",
+            paymentSourceId: paymentSources.find((ps) => ps.is_default)?.id ?? "",
             savingRule: false,
+            ruleSavedForCategoryId: null,
           }),
         ),
       );
@@ -245,7 +251,7 @@ export function ReviewModal({
   async function submitRule() {
     if (!ruleForm) return;
     updateRow(ruleForm.rowKey, { savingRule: true });
-    await fetch("/api/merchant-rules", {
+    const res = await fetch("/api/merchant-rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -255,7 +261,10 @@ export function ReviewModal({
         isAmbiguous: ruleForm.isAmbiguous,
       }),
     });
-    updateRow(ruleForm.rowKey, { savingRule: false });
+    updateRow(ruleForm.rowKey, {
+      savingRule: false,
+      ruleSavedForCategoryId: res.ok ? ruleForm.categoryId : null,
+    });
     setRuleForm(null);
   }
 
@@ -561,6 +570,7 @@ export function ReviewModal({
                     </button>
                     <button
                       type="button"
+                      disabled={row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId}
                       onClick={() =>
                         setRuleForm({
                           rowKey: row.key,
@@ -570,9 +580,11 @@ export function ReviewModal({
                           isAmbiguous: false,
                         })
                       }
-                      className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                      className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Salvar regra
+                      {row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId
+                        ? "Regra salva ✓"
+                        : "Salvar regra"}
                     </button>
                     <button
                       type="button"

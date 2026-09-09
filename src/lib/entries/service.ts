@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
 import { ensureAwaitingReviewCategory, isLeafCategory } from "@/lib/categories/service";
+import { getLedgerById } from "@/lib/ledgers/service";
 
 export type EntryType = "expense" | "income";
 
@@ -14,6 +15,7 @@ export type EntryRow = {
   amount: string;
   category_id: string | null;
   category_name: string | null;
+  category_type: string | null;
   payment_source_id: string | null;
   payment_source_name: string | null;
   review_status: string;
@@ -43,7 +45,7 @@ export async function listEntries(
   const { rows } = await db<EntryRow>(
     `SELECT
        e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
-       e.category_id, c.name AS category_name,
+       e.category_id, c.name AS category_name, c.category_type AS category_type,
        e.payment_source_id, ps.name AS payment_source_name,
        e.review_status, e.input_method, e.created_at,
        e.installment_plan_id, e.installment_number, ip.total_installments
@@ -157,6 +159,7 @@ export type UpdateEntryInput = {
   entryDate?: string;
   categoryId?: string | null;
   paymentSourceId?: string | null;
+  ledgerId?: string;
 };
 
 export type UpdateEntryResult = { status: "updated" } | { status: "error"; message: string };
@@ -194,11 +197,21 @@ export async function updateEntry(
     values.push(input.entryDate);
     sets.push(`entry_date = $${values.length}`);
   }
-  if (input.categoryId !== undefined) {
-    let categoryId = input.categoryId;
+  const ledgerChanging = input.ledgerId !== undefined && input.ledgerId !== existing.ledger_id;
+  const targetLedgerId = ledgerChanging ? input.ledgerId! : existing.ledger_id;
+
+  if (ledgerChanging && !(await getLedgerById(householdId, targetLedgerId))) {
+    return { status: "error", message: "Orçamento inválido." };
+  }
+
+  if (input.categoryId !== undefined || (ledgerChanging && existing.entry_type === "expense")) {
+    let categoryId = input.categoryId !== undefined ? input.categoryId : null;
     if (existing.entry_type === "expense") {
-      if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId, existing.ledger_id);
-      if (!(await isLeafCategory(householdId, existing.ledger_id, categoryId))) {
+      // Trocar de orçamento invalida a categoria antiga — ela pertence à
+      // árvore do orçamento anterior. Sem categoria explícita nesta mesma
+      // chamada, cai na "Aguardando Revisão" do orçamento de destino.
+      if (!categoryId) categoryId = await ensureAwaitingReviewCategory(householdId, targetLedgerId);
+      if (!(await isLeafCategory(householdId, targetLedgerId, categoryId))) {
         return {
           status: "error",
           message: "Categoria inválida — escolha uma categoria-folha deste orçamento.",
@@ -211,6 +224,10 @@ export async function updateEntry(
   if (input.paymentSourceId !== undefined) {
     values.push(input.paymentSourceId);
     sets.push(`payment_source_id = $${values.length}`);
+  }
+  if (ledgerChanging) {
+    values.push(targetLedgerId);
+    sets.push(`ledger_id = $${values.length}`);
   }
 
   if (sets.length === 0) return { status: "updated" };

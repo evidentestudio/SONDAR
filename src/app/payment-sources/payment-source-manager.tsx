@@ -56,6 +56,15 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
     await refetch();
   }
 
+  async function makeDefault(id: string) {
+    await fetch(`/api/payment-sources/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    await refetch();
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {error && (
@@ -138,8 +147,23 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
               <div className="flex items-center gap-2">
                 {s.color && <span className="h-3 w-3 rounded-full" style={{ background: s.color }} aria-hidden />}
                 <span className="text-sm text-ink">{s.name}</span>
+                {s.is_default && (
+                  <span className="rounded-full bg-accent-light px-2 py-0.5 text-xs text-accent-dark">
+                    Principal
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                {!s.is_default && (
+                  <button
+                    type="button"
+                    onClick={() => makeDefault(s.id)}
+                    title="Definir como principal"
+                    className="min-h-8 min-w-8 rounded px-2 text-ink-soft"
+                  >
+                    ☆
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setEditing({ id: s.id, name: s.name, color: s.color ?? "#2F6F5E" })}

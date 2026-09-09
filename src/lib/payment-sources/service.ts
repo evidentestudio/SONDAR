@@ -7,6 +7,7 @@ export type PaymentSourceRow = {
   name_normalized: string;
   color: string | null;
   sort_order: number;
+  is_default: boolean;
   created_at: string;
   deleted_at: string | null;
 };
@@ -99,6 +100,17 @@ export async function updatePaymentSource(
     values,
   );
   return { status: "updated", source: rows[0] };
+}
+
+/** Exactly one payment source can be default per household — this sets $2 as
+ * the default and unsets every other row in the same statement, so there's
+ * never a window with zero or two defaults. */
+export async function setDefaultPaymentSource(householdId: string, id: string): Promise<void> {
+  await db(
+    `UPDATE payment_sources SET is_default = (id = $2)
+     WHERE household_id = $1 AND deleted_at IS NULL`,
+    [householdId, id],
+  );
 }
 
 export async function deletePaymentSource(householdId: string, id: string): Promise<void> {

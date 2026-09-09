@@ -519,7 +519,16 @@ function CategoryRow({
           <button type="button" onClick={onStartEdit} title="Editar" className="min-h-8 min-w-8 rounded px-2 text-ink-soft">
             ✎
           </button>
-          {node.category_type !== "awaiting_review" && (
+          {node.category_type === "awaiting_review" ? (
+            <button
+              type="button"
+              disabled
+              title="Não é possível excluir — categoria de sistema, sempre existe em cada orçamento."
+              className="min-h-8 min-w-8 cursor-not-allowed rounded px-2 text-muted opacity-60"
+            >
+              ×
+            </button>
+          ) : (
             <button
               type="button"
               onClick={onStartDelete}

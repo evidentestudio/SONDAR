@@ -23,9 +23,7 @@ export default async function NotesPage() {
       </header>
 
       <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
-        <p className="mb-4 text-sm text-muted">
-          Espaço livre pra anotar melhorias e ideias futuras, separado das categorias financeiras.
-        </p>
+        <p className="mb-4 text-sm text-muted">Espaço para suas anotações e lembretes.</p>
         <NotesManager initialNotes={notes} />
       </main>
     </div>

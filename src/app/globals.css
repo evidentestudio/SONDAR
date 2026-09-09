@@ -80,3 +80,24 @@ h1, h2, h3 {
 .money {
   font-family: var(--font-mono);
 }
+
+/* Tactile feedback on every button, regardless of its own background/border
+   classes — without this, clicking gave zero visual confirmation. */
+button:not(:disabled) {
+  transition: filter 120ms ease, transform 80ms ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(0.96);
+}
+button:not(:disabled):active {
+  filter: brightness(0.9);
+  transform: translateY(1px);
+}
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled) {
+    transition: none;
+  }
+  button:not(:disabled):active {
+    transform: none;
+  }
+}

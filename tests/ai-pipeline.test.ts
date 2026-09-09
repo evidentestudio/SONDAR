@@ -61,7 +61,7 @@ describe("processExtractedItems", () => {
       item({ category: "mercado", description: "Padaria da Esquina" }),
     ]);
     expect(draft.categoryId).toBe(mercadoId);
-    expect(draft.categoryName).toBe("Mercado");
+    expect(draft.categoryName).toBe("MERCADO");
     expect(draft.categoryNotFound).toBe(false);
     expect(draft.needsReview).toBe(false);
   });
@@ -84,7 +84,7 @@ describe("processExtractedItems", () => {
       item({ description: "IFOOD*Restaurante X", category: "Assinaturas" }),
     ]);
     expect(draft.categoryId).toBe(mercadoId);
-    expect(draft.categoryName).toBe("Mercado");
+    expect(draft.categoryName).toBe("MERCADO");
     expect(draft.matchedRuleId).not.toBeNull();
   });
 

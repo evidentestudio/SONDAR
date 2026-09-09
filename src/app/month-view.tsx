@@ -174,7 +174,14 @@ function LedgerPanel({
     initialData?.paymentSourceTotals ?? [],
   );
   const [entries, setEntries] = useState<EntryRow[]>(initialData?.entries ?? []);
-  const [filterSource, setFilterSource] = useState<string>("");
+  const [entryFilters, setEntryFilters] = useState({
+    categoryId: "",
+    paymentSourceId: "",
+    description: "",
+    dateFrom: "",
+    dateTo: "",
+  });
+  const [entriesCollapsed, setEntriesCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [showAddEntry, setShowAddEntry] = useState(false);
@@ -192,6 +199,8 @@ function LedgerPanel({
     amount: string;
     categoryId: string;
     paymentSourceId: string;
+    ledgerId: string;
+    leaves: LeafOption[];
   } | null>(null);
   const skipNextLoad = useRef(!!initialData);
 
@@ -199,6 +208,26 @@ function LedgerPanel({
   const orcadoTotal = categories
     .filter((c) => c.categoryType === "normal")
     .reduce((s, c) => s + c.orcado, 0);
+
+  const hasActiveFilter = Object.values(entryFilters).some((v) => v !== "");
+  const filteredEntries = entries.filter((e) => {
+    if (entryFilters.categoryId && e.category_id !== entryFilters.categoryId) return false;
+    if (entryFilters.paymentSourceId && e.payment_source_id !== entryFilters.paymentSourceId) return false;
+    if (
+      entryFilters.description &&
+      !e.description.toLowerCase().includes(entryFilters.description.toLowerCase())
+    )
+      return false;
+    if (entryFilters.dateFrom && e.entry_date.slice(0, 10) < entryFilters.dateFrom) return false;
+    if (entryFilters.dateTo && e.entry_date.slice(0, 10) > entryFilters.dateTo) return false;
+    return true;
+  });
+  const filteredGasto = filteredEntries
+    .filter((e) => e.entry_type === "expense")
+    .reduce((s, e) => s + Number(e.amount), 0);
+  const filteredCredito = filteredEntries
+    .filter((e) => e.entry_type === "income")
+    .reduce((s, e) => s + Number(e.amount), 0);
 
   const loadSummary = useCallback(
     async (m: string) => {
@@ -212,10 +241,8 @@ function LedgerPanel({
   );
 
   const loadEntries = useCallback(
-    async (m: string, sourceId: string) => {
-      const qs = new URLSearchParams({ month: m, ledgerId });
-      if (sourceId) qs.set("paymentSourceId", sourceId);
-      const res = await fetch(`/api/entries?${qs.toString()}`);
+    async (m: string) => {
+      const res = await fetch(`/api/entries?${new URLSearchParams({ month: m, ledgerId })}`);
       const data = await res.json();
       setEntries(data.entries ?? []);
     },
@@ -227,15 +254,8 @@ function LedgerPanel({
       skipNextLoad.current = false;
       return;
     }
-    Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
-    // filterSource intentionally excluded — changing it has its own handler.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    Promise.all([loadSummary(month), loadEntries(month)]);
   }, [ledgerId, month, loadSummary, loadEntries]);
-
-  async function changeFilterSource(sourceId: string) {
-    setFilterSource(sourceId);
-    await loadEntries(month, sourceId);
-  }
 
   async function copyPreviousBudget() {
     setError(null);
@@ -303,7 +323,7 @@ function LedgerPanel({
             description: input.description,
             amount,
             categoryId: input.entryType === "expense" ? input.categoryId : null,
-            paymentSourceId: input.paymentSourceId || null,
+            paymentSourceId: input.entryType === "expense" ? input.paymentSourceId || null : null,
             ledgerId: input.ledgerId,
           }),
         });
@@ -314,13 +334,13 @@ function LedgerPanel({
     }
     setShowAddEntry(false);
     if (input.ledgerId === ledgerId) {
-      await Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+      await Promise.all([loadSummary(month), loadEntries(month)]);
     }
   }
 
   async function removeEntry(id: string) {
     await fetch(`/api/entries/${id}`, { method: "DELETE" });
-    await Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+    await Promise.all([loadSummary(month), loadEntries(month)]);
   }
 
   function startEditEntry(entry: EntryRow) {
@@ -332,7 +352,18 @@ function LedgerPanel({
       amount: toAmountInputValue(Number(entry.amount)),
       categoryId: entry.category_id ?? "",
       paymentSourceId: entry.payment_source_id ?? "",
+      ledgerId,
+      leaves,
     });
+  }
+
+  async function changeEditLedger(newLedgerId: string) {
+    setEditingEntry((prev) => {
+      if (!prev) return prev;
+      return { ...prev, ledgerId: newLedgerId, categoryId: "" };
+    });
+    const newLeaves = newLedgerId === ledgerId ? leaves : await fetchLedgerLeaves(newLedgerId);
+    setEditingEntry((prev) => (prev ? { ...prev, leaves: newLeaves } : prev));
   }
 
   async function submitEditEntry() {
@@ -347,7 +378,8 @@ function LedgerPanel({
         description: editingEntry.description,
         amount,
         categoryId: editingEntry.entryType === "expense" ? editingEntry.categoryId || null : null,
-        paymentSourceId: editingEntry.paymentSourceId || null,
+        paymentSourceId: editingEntry.entryType === "expense" ? editingEntry.paymentSourceId || null : null,
+        ledgerId: editingEntry.ledgerId,
       }),
     });
     if (!res.ok) {
@@ -356,7 +388,7 @@ function LedgerPanel({
       return;
     }
     setEditingEntry(null);
-    await Promise.all([loadSummary(month), loadEntries(month, filterSource)]);
+    await Promise.all([loadSummary(month), loadEntries(month)]);
   }
 
   function toggleExpanded(id: string) {
@@ -402,18 +434,13 @@ function LedgerPanel({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-serif text-lg text-ink">Lançamentos</h3>
           <div className="flex items-center gap-2">
-            <select
-              value={filterSource}
-              onChange={(e) => changeFilterSource(e.target.value)}
-              className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+            <button
+              type="button"
+              onClick={() => setEntriesCollapsed((v) => !v)}
+              className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-ink-soft"
             >
-              <option value="">Todas as formas</option>
-              {paymentSources.map((ps) => (
-                <option key={ps.id} value={ps.id}>
-                  {ps.name}
-                </option>
-              ))}
-            </select>
+              {entriesCollapsed ? "▼ expandir" : "▲ recolher"}
+            </button>
             {showEntryControls && (
               <>
                 <button
@@ -425,7 +452,10 @@ function LedgerPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAddEntry((v) => !v)}
+                  onClick={() => {
+                    setShowAddEntry((v) => !v);
+                    setEntriesCollapsed(false);
+                  }}
                   className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
                 >
                   + Novo lançamento
@@ -435,162 +465,291 @@ function LedgerPanel({
           </div>
         </div>
 
-        {showAddEntry && (
-          <EntryForm
-            month={month}
-            initialLeaves={leaves}
-            ledgers={ledgers}
-            defaultLedgerId={ledgerId}
-            paymentSources={paymentSources}
-            onCancel={() => setShowAddEntry(false)}
-            onSubmit={submitEntry}
-          />
-        )}
+        {!entriesCollapsed && (
+          <>
+            {showAddEntry && (
+              <EntryForm
+                month={month}
+                initialLeaves={leaves}
+                ledgers={ledgers}
+                defaultLedgerId={ledgerId}
+                paymentSources={paymentSources}
+                onCancel={() => setShowAddEntry(false)}
+                onSubmit={submitEntry}
+              />
+            )}
 
-        {entries.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted">Nenhum lançamento neste mês ainda.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs uppercase tracking-wide text-muted">
-                  <th className="py-2">Data</th>
-                  <th className="py-2">Descrição</th>
-                  <th className="py-2">Categoria</th>
-                  <th className="py-2">Forma</th>
-                  <th className="py-2 text-right">Valor</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) =>
-                  editingEntry?.id === entry.id ? (
-                    <tr key={entry.id} className="border-t border-border bg-[#FBFAF6]">
-                      <td className="py-2 pr-2">
-                        <input
-                          type="date"
-                          value={editingEntry.entryDate}
-                          onChange={(e) => setEditingEntry({ ...editingEntry, entryDate: e.target.value })}
-                          className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
-                        />
-                      </td>
-                      <td className="py-2 pr-2">
-                        <input
-                          type="text"
-                          value={editingEntry.description}
-                          onChange={(e) => setEditingEntry({ ...editingEntry, description: e.target.value })}
-                          className="min-h-9 w-full min-w-32 rounded border border-border-strong px-1 text-sm"
-                        />
-                      </td>
-                      <td className="py-2 pr-2">
-                        {editingEntry.entryType === "expense" ? (
-                          <select
-                            value={editingEntry.categoryId}
-                            onChange={(e) =>
-                              setEditingEntry({ ...editingEntry, categoryId: e.target.value })
-                            }
-                            className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
-                          >
-                            <option value="">Aguardando Revisão</option>
-                            {leaves.map((l) => (
-                              <option key={l.id} value={l.id}>
-                                {l.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-2">
-                        <select
-                          value={editingEntry.paymentSourceId}
-                          onChange={(e) =>
-                            setEditingEntry({ ...editingEntry, paymentSourceId: e.target.value })
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                Categoria
+                <select
+                  value={entryFilters.categoryId}
+                  onChange={(e) => setEntryFilters({ ...entryFilters, categoryId: e.target.value })}
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                >
+                  <option value="">Todas</option>
+                  {leaves.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                Forma
+                <select
+                  value={entryFilters.paymentSourceId}
+                  onChange={(e) => setEntryFilters({ ...entryFilters, paymentSourceId: e.target.value })}
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                >
+                  <option value="">Todas</option>
+                  {paymentSources.map((ps) => (
+                    <option key={ps.id} value={ps.id}>
+                      {ps.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                Descrição
+                <input
+                  type="text"
+                  value={entryFilters.description}
+                  onChange={(e) => setEntryFilters({ ...entryFilters, description: e.target.value })}
+                  placeholder="Buscar..."
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                De
+                <input
+                  type="date"
+                  value={entryFilters.dateFrom}
+                  onChange={(e) => setEntryFilters({ ...entryFilters, dateFrom: e.target.value })}
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                Até
+                <input
+                  type="date"
+                  value={entryFilters.dateTo}
+                  onChange={(e) => setEntryFilters({ ...entryFilters, dateTo: e.target.value })}
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                />
+              </label>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEntryFilters({
+                      categoryId: "",
+                      paymentSourceId: "",
+                      description: "",
+                      dateFrom: "",
+                      dateTo: "",
+                    })
+                  }
+                  className="min-h-9 rounded-lg px-2 text-xs text-muted underline"
+                >
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-soft">
+              <span>
+                {hasActiveFilter ? "Total no filtro" : "Total geral"}: gasto{" "}
+                <span className="money text-ink">{formatBRL(filteredGasto)}</span> · créditos{" "}
+                <span className="money text-ink">{formatBRL(filteredCredito)}</span>
+              </span>
+              <span className="text-muted">
+                {filteredEntries.length} de {entries.length} lançamento(s)
+              </span>
+            </div>
+
+            {filteredEntries.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted">
+                {entries.length === 0 ? "Nenhum lançamento neste mês ainda." : "Nenhum lançamento com esse filtro."}
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-wide text-muted">
+                      <th className="py-2">Data</th>
+                      <th className="py-2">Descrição</th>
+                      <th className="py-2">Categoria</th>
+                      <th className="py-2">Forma</th>
+                      <th className="py-2 text-right">Valor</th>
+                      <th className="py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredEntries.map((entry) =>
+                      editingEntry?.id === entry.id ? (
+                        <tr key={entry.id} className="border-t border-border bg-[#FBFAF6]">
+                          <td className="py-2 pr-2">
+                            <input
+                              type="date"
+                              value={editingEntry.entryDate}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, entryDate: e.target.value })}
+                              className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              type="text"
+                              value={editingEntry.description}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, description: e.target.value })}
+                              className="min-h-9 w-full min-w-32 rounded border border-border-strong px-1 text-sm"
+                            />
+                          </td>
+                          <td className="py-2 pr-2">
+                            {editingEntry.entryType === "expense" ? (
+                              <div className="flex flex-col gap-1">
+                                {ledgers.length > 1 && (
+                                  <select
+                                    value={editingEntry.ledgerId}
+                                    onChange={(e) => changeEditLedger(e.target.value)}
+                                    className="min-h-8 w-full rounded border border-border-strong px-1 text-xs text-ink-soft"
+                                  >
+                                    {ledgers.map((l) => (
+                                      <option key={l.id} value={l.id}>
+                                        {l.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <select
+                                  value={editingEntry.categoryId}
+                                  onChange={(e) =>
+                                    setEditingEntry({ ...editingEntry, categoryId: e.target.value })
+                                  }
+                                  className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
+                                >
+                                  <option value="">Aguardando Revisão</option>
+                                  {editingEntry.leaves.map((l) => (
+                                    <option key={l.id} value={l.id}>
+                                      {l.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            ) : (
+                              <span className="text-muted">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 pr-2">
+                            <select
+                              value={editingEntry.entryType === "income" ? "" : editingEntry.paymentSourceId}
+                              onChange={(e) =>
+                                setEditingEntry({ ...editingEntry, paymentSourceId: e.target.value })
+                              }
+                              disabled={editingEntry.entryType === "income"}
+                              title={editingEntry.entryType === "income" ? "Não se aplica a crédito" : undefined}
+                              className="min-h-9 w-full rounded border border-border-strong px-1 text-sm disabled:bg-paper disabled:text-muted"
+                            >
+                              <option value="">Forma de pagamento (opcional)</option>
+                              {paymentSources.map((ps) => (
+                                <option key={ps.id} value={ps.id}>
+                                  {ps.name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 pr-2">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={editingEntry.amount}
+                              onChange={(e) => setEditingEntry({ ...editingEntry, amount: e.target.value })}
+                              className="money min-h-9 w-24 rounded border border-border-strong px-1 text-right text-sm"
+                            />
+                          </td>
+                          <td className="py-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={submitEditEntry}
+                              className="min-h-8 rounded px-2 text-sm text-accent-dark"
+                            >
+                              Salvar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingEntry(null)}
+                              className="min-h-8 rounded px-2 text-sm text-muted"
+                            >
+                              Cancelar
+                            </button>
+                          </td>
+                        </tr>
+                      ) : (
+                        <tr
+                          key={entry.id}
+                          className="group border-t border-border"
+                          style={
+                            entry.category_type === "awaiting_review"
+                              ? { background: "var(--row-awaiting-bg)" }
+                              : undefined
                           }
-                          className="min-h-9 w-full rounded border border-border-strong px-1 text-sm"
                         >
-                          <option value="">Forma de pagamento (opcional)</option>
-                          {paymentSources.map((ps) => (
-                            <option key={ps.id} value={ps.id}>
-                              {ps.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2 pr-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={editingEntry.amount}
-                          onChange={(e) => setEditingEntry({ ...editingEntry, amount: e.target.value })}
-                          className="money min-h-9 w-24 rounded border border-border-strong px-1 text-right text-sm"
-                        />
-                      </td>
-                      <td className="py-2 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={submitEditEntry}
-                          className="min-h-8 rounded px-2 text-sm text-accent-dark"
-                        >
-                          Salvar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingEntry(null)}
-                          className="min-h-8 rounded px-2 text-sm text-muted"
-                        >
-                          Cancelar
-                        </button>
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={entry.id} className="group border-t border-border">
-                      <td className="py-2">{entry.entry_date.slice(0, 10).split("-").reverse().join("/")}</td>
-                      <td className="py-2">
-                        {entry.description}
-                        {entry.installment_plan_id && (
-                          <span
-                            className="ml-1 text-xs text-muted"
-                            title={`Parcela ${entry.installment_number}/${entry.total_installments}`}
+                          <td className="py-2">{entry.entry_date.slice(0, 10).split("-").reverse().join("/")}</td>
+                          <td className="py-2">
+                            {entry.description}
+                            {entry.installment_plan_id && (
+                              <span
+                                className="ml-1 text-xs text-muted"
+                                title={`Parcela ${entry.installment_number}/${entry.total_installments}`}
+                              >
+                                🔁
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            className="py-2"
+                            style={
+                              entry.category_type === "awaiting_review"
+                                ? { color: "var(--row-awaiting-text)" }
+                                : undefined
+                            }
                           >
-                            🔁
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2">{entry.category_name ?? "—"}</td>
-                      <td className="py-2">{entry.payment_source_name ?? "—"}</td>
-                      <td
-                        className="money py-2 text-right"
-                        style={{ color: entry.entry_type === "income" ? "var(--status-green)" : undefined }}
-                      >
-                        {entry.entry_type === "income" ? "+" : "-"}
-                        {formatBRL(Number(entry.amount))}
-                      </td>
-                      <td className="py-2 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => startEditEntry(entry)}
-                          title="Editar"
-                          className="min-h-8 min-w-8 rounded px-2 text-ink-soft opacity-0 group-hover:opacity-100"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeEntry(entry.id)}
-                          title="Excluir"
-                          className="min-h-8 min-w-8 rounded px-2 text-rust"
-                        >
-                          ×
-                        </button>
-                      </td>
-                    </tr>
-                  ),
-                )}
-              </tbody>
-            </table>
-          </div>
+                            {entry.category_name ?? "—"}
+                          </td>
+                          <td className="py-2">{entry.payment_source_name ?? "—"}</td>
+                          <td
+                            className="money py-2 text-right"
+                            style={{ color: entry.entry_type === "income" ? "var(--status-green)" : undefined }}
+                          >
+                            {entry.entry_type === "income" ? "+" : "-"}
+                            {formatBRL(Number(entry.amount))}
+                          </td>
+                          <td className="py-2 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => startEditEntry(entry)}
+                              title="Editar"
+                              className="min-h-8 min-w-8 rounded px-2 text-ink-soft opacity-0 group-hover:opacity-100"
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeEntry(entry.id)}
+                              title="Excluir"
+                              className="min-h-8 min-w-8 rounded px-2 text-rust"
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -655,7 +814,7 @@ function LedgerPanel({
           onClose={() => setShowReview(false)}
           onSaved={() => {
             loadSummary(month);
-            loadEntries(month, filterSource);
+            loadEntries(month);
           }}
         />
       )}
@@ -896,7 +1055,9 @@ function EntryForm({
   const [ledgerId, setLedgerId] = useState(defaultLedgerId);
   const [leaves, setLeaves] = useState<LeafOption[]>(initialLeaves);
   const [categoryId, setCategoryId] = useState("");
-  const [paymentSourceId, setPaymentSourceId] = useState("");
+  const [paymentSourceId, setPaymentSourceId] = useState(
+    () => paymentSources.find((p) => p.is_default)?.id ?? "",
+  );
 
   async function changeLedger(id: string) {
     setLedgerId(id);
@@ -1041,9 +1202,11 @@ function EntryForm({
           </select>
         )}
         <select
-          value={paymentSourceId}
+          value={entryType === "income" ? "" : paymentSourceId}
           onChange={(e) => setPaymentSourceId(e.target.value)}
-          className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm"
+          disabled={entryType === "income"}
+          title={entryType === "income" ? "Não se aplica a crédito" : undefined}
+          className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm disabled:bg-paper disabled:text-muted"
         >
           <option value="">Forma de pagamento (opcional)</option>
           {paymentSources.map((ps) => (

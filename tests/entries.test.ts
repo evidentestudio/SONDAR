@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { getPool } from "@/lib/db";
 import { createCategory, ensureAwaitingReviewCategory } from "@/lib/categories/service";
-import { createEntry, listEntries } from "@/lib/entries/service";
+import { createEntry, listEntries, updateEntry } from "@/lib/entries/service";
 
 const pool = getPool();
 const MONTH = "2026-09";
@@ -66,5 +66,65 @@ describe("lançamentos", () => {
     const entries = await listEntries(householdId, ledgerId, MONTH);
     const entry = entries.find((e) => e.description === "Sem categoria escolhida")!;
     expect(entry.category_id).toBe(awaitingReviewId);
+  });
+
+  it("editar lançamento pode trocar de orçamento, caindo na Aguardando Revisão do destino", async () => {
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Suborçamento Teste', false) RETURNING id`,
+      [householdId],
+    );
+    const otherLedgerId = ledgerRows[0].id;
+
+    const cat = await createCategory(householdId, ledgerId, { name: "Categoria Origem" });
+    if (cat.status !== "created") throw new Error("setup failed");
+
+    const created = await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-20",
+      description: "Lançamento pra mover",
+      amount: 30,
+      categoryId: cat.category.id,
+    });
+    if (created.status !== "created") throw new Error("setup failed");
+
+    const result = await updateEntry(householdId, created.entry.id, { ledgerId: otherLedgerId });
+    expect(result.status).toBe("updated");
+
+    const entriesOld = await listEntries(householdId, ledgerId, MONTH);
+    expect(entriesOld.find((e) => e.id === created.entry.id)).toBeUndefined();
+
+    const otherAwaitingReviewId = await ensureAwaitingReviewCategory(householdId, otherLedgerId);
+    const entriesNew = await listEntries(householdId, otherLedgerId, MONTH);
+    const moved = entriesNew.find((e) => e.id === created.entry.id)!;
+    expect(moved.category_id).toBe(otherAwaitingReviewId);
+  });
+
+  it("editar lançamento rejeita trocar para um orçamento de outro household", async () => {
+    const { rows: otherHouseholdRows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_entries_other__') RETURNING id`,
+    );
+    const { rows: foreignLedgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [otherHouseholdRows[0].id],
+    );
+
+    const cat = await createCategory(householdId, ledgerId, { name: "Categoria Segura" });
+    if (cat.status !== "created") throw new Error("setup failed");
+    const created = await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-21",
+      description: "Não pode migrar de household",
+      amount: 15,
+      categoryId: cat.category.id,
+    });
+    if (created.status !== "created") throw new Error("setup failed");
+
+    const result = await updateEntry(householdId, created.entry.id, { ledgerId: foreignLedgerRows[0].id });
+    expect(result.status).toBe("error");
+
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [otherHouseholdRows[0].id]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [otherHouseholdRows[0].id]);
   });
 });

@@ -149,10 +149,13 @@ export async function createCategory(
   ledgerId: string,
   input: CreateCategoryInput,
 ): Promise<CreateCategoryResult> {
-  const name = input.name.trim();
-  if (!name) return { status: "error", message: "Nome não pode ser vazio." };
+  const trimmed = input.name.trim();
+  if (!trimmed) return { status: "error", message: "Nome não pode ser vazio." };
 
   const parentId = input.parentId ?? null;
+  // Categorias-mãe (topo da hierarquia) sempre em caixa alta; subcategorias
+  // ficam como o usuário digitou.
+  const name = parentId === null ? trimmed.toUpperCase() : trimmed;
 
   if (parentId) {
     const parent = await getCategoryById(householdId, parentId);
@@ -223,11 +226,13 @@ export async function updateCategory(
   if (input.name !== undefined) {
     const trimmed = input.name.trim();
     if (!trimmed) return { status: "error", message: "Nome não pode ser vazio." };
-    const existing = await findCanonicalCategory(category.ledger_id, trimmed);
+    // Mesma regra da criação: categoria-mãe em caixa alta, subcategoria livre.
+    const name = category.parent_id === null ? trimmed.toUpperCase() : trimmed;
+    const existing = await findCanonicalCategory(category.ledger_id, name);
     if (existing && existing.id !== id) {
       return { status: "error", message: `Já existe uma categoria chamada "${existing.name}".` };
     }
-    values.push(trimmed);
+    values.push(name);
     sets.push(`name = $${values.length}`);
   }
   if ("color" in input) {

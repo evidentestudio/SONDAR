@@ -140,7 +140,7 @@ describe("categorias — Etapa 1", () => {
       await createCategory(householdId, ledgerId, { name: "Alimentação" });
 
       const tree = await getCategoryTree(householdId, ledgerId);
-      expect(tree.map((c) => c.name)).toEqual(["Alimentação", "Zebra", "Aguardando Revisão"]);
+      expect(tree.map((c) => c.name)).toEqual(["ALIMENTAÇÃO", "ZEBRA", "Aguardando Revisão"]);
     });
   });
 
@@ -232,7 +232,35 @@ describe("categorias — Etapa 1", () => {
       expect(result.status).toBe("updated");
       if (result.status !== "updated") throw new Error("unreachable");
       expect(result.category.color).toBe("#FF0000");
-      expect(result.category.name).toBe("Saúde");
+      expect(result.category.name).toBe("SAÚDE");
+    });
+  });
+
+  describe("categoria-mãe em caixa alta", () => {
+    it("categoria-mãe é salva em caixa alta; subcategoria mantém como digitado", async () => {
+      const parent = await createCategory(householdId, ledgerId, { name: "lazer" });
+      if (parent.status !== "created") throw new Error("setup failed");
+      expect(parent.category.name).toBe("LAZER");
+
+      const child = await createCategory(householdId, ledgerId, {
+        name: "Streaming",
+        parentId: parent.category.id,
+      });
+      if (child.status !== "created") throw new Error("setup failed");
+      expect(child.category.name).toBe("Streaming");
+    });
+  });
+
+  describe("recriar após excluir", () => {
+    it("permite criar categoria com o mesmo nome de uma já excluída", async () => {
+      const first = await createCategory(householdId, ledgerId, { name: "Lazer" });
+      if (first.status !== "created") throw new Error("setup failed");
+
+      const deleted = await deleteCategory(householdId, first.category.id);
+      expect(deleted.status).toBe("deleted");
+
+      const second = await createCategory(householdId, ledgerId, { name: "Lazer" });
+      expect(second.status).toBe("created");
     });
   });
 });

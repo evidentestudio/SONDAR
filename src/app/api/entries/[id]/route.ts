@@ -15,12 +15,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     entryDate?: string;
     categoryId?: string | null;
     paymentSourceId?: string | null;
+    ledgerId?: string;
   } = {};
   if (typeof body?.description === "string") input.description = body.description;
   if (body?.amount !== undefined) input.amount = Number(body.amount);
   if (typeof body?.entryDate === "string") input.entryDate = body.entryDate;
   if ("categoryId" in (body ?? {})) input.categoryId = body.categoryId;
   if ("paymentSourceId" in (body ?? {})) input.paymentSourceId = body.paymentSourceId;
+  if (typeof body?.ledgerId === "string") input.ledgerId = body.ledgerId;
 
   const result = await updateEntry(session.householdId, id, input);
   if (result.status === "error") {

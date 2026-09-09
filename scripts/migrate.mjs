@@ -25,7 +25,12 @@ if (!databaseUrl) {
 // since they're the only migrations that existed before this tracking did.
 const PRE_TRACKING_FILES = ["db/000_extensions.sql", "db/sondar_schema.sql", "db/001_auth.sql"];
 
-const files = [...PRE_TRACKING_FILES, "db/002_fix_month_totals_view.sql", "db/003_ledgers.sql"];
+const files = [
+  ...PRE_TRACKING_FILES,
+  "db/002_fix_month_totals_view.sql",
+  "db/003_ledgers.sql",
+  "db/004_fixes_round1.sql",
+];
 
 async function tableExists(client, name) {
   const { rows } = await client.query(

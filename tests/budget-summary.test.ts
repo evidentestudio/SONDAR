@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { getPool } from "@/lib/db";
-import { createCategory } from "@/lib/categories/service";
+import { createCategory, deleteCategory } from "@/lib/categories/service";
 import { setBudget, copyBudgetsFromPreviousMonth } from "@/lib/budgets/service";
 import { getCategoryMonthSummary, getMonthTotals, getPaymentSourceTotals } from "@/lib/budget-summary/service";
 import { createEntry } from "@/lib/entries/service";
@@ -141,6 +141,21 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     const tree = await getCategoryMonthSummary(householdId, ledgerId, MONTH);
     const mercado = tree.find((c) => c.id === mercadoId)!;
     expect(mercado.orcado).toBe(999);
+  });
+
+  it("copiar orçamento ignora categoria já excluída no mês anterior", async () => {
+    const temp = await createCategory(householdId, ledgerId, { name: "Categoria Temporária" });
+    if (temp.status !== "created") throw new Error("setup failed");
+    await setBudget(householdId, temp.category.id, PREV_MONTH, 500);
+    await deleteCategory(householdId, temp.category.id);
+
+    await copyBudgetsFromPreviousMonth(householdId, ledgerId, "2026-10");
+
+    const { rows } = await pool.query(
+      `SELECT 1 FROM budgets WHERE category_id = $1 AND month = '2026-10-01'`,
+      [temp.category.id],
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it("recusa lançamento numa categoria-grupo (só folha recebe lançamento)", async () => {

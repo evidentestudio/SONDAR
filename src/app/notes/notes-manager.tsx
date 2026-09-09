@@ -66,6 +66,9 @@ export function NotesManager({ initialNotes }: { initialNotes: NoteRow[] }) {
             <label className="flex flex-1 items-center gap-2 text-sm">
               <input type="checkbox" checked={note.is_done} onChange={() => toggleDone(note)} />
               <span className={note.is_done ? "text-muted line-through" : "text-ink"}>{note.content}</span>
+              <span className="shrink-0 text-xs text-muted">
+                {new Date(note.created_at).toLocaleDateString("pt-BR")}
+              </span>
             </label>
             <button
               type="button"

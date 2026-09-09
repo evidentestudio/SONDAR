@@ -57,6 +57,7 @@ export async function copyBudgetsFromPreviousMonth(
      FROM budgets b
      JOIN categories c ON c.id = b.category_id
      WHERE b.household_id = $1 AND c.ledger_id = $4 AND b.month = $2::date
+       AND c.deleted_at IS NULL
      ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount, updated_at = now()
      RETURNING id`,
     [householdId, prevDate, targetDate, ledgerId],
