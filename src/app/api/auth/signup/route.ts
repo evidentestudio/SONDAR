@@ -9,8 +9,9 @@ export async function POST(request: Request) {
   const password = typeof body?.password === "string" ? body.password : "";
   const displayName = typeof body?.displayName === "string" ? body.displayName : "";
   const householdName = typeof body?.householdName === "string" ? body.householdName : null;
+  const acceptedPrivacyPolicy = body?.acceptedPrivacyPolicy === true;
 
-  const result = await createAccount({ email, password, displayName, householdName });
+  const result = await createAccount({ email, password, displayName, householdName, acceptedPrivacyPolicy });
   if (result.status === "error") {
     return NextResponse.json({ error: result.message }, { status: 400 });
   }

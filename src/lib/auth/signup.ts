@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { hashPassword } from "./password";
 import { createAuthToken, consumeAuthToken } from "./tokens";
 import { sendEmail, appUrl } from "@/lib/email/send";
+import { PRIVACY_POLICY_VERSION } from "@/lib/legal/privacy-policy";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
@@ -11,6 +12,10 @@ export type CreateAccountInput = {
   displayName: string;
   email: string;
   password: string;
+  /** Consentimento explícito com a Política de Privacidade — obrigatório,
+   * é a base legal do tratamento de dados (LGPD). Registrado em
+   * consent_records junto com a versão vigente no momento do aceite. */
+  acceptedPrivacyPolicy: boolean;
 };
 
 export type CreateAccountResult =
@@ -34,6 +39,9 @@ export async function createAccount(input: CreateAccountInput): Promise<CreateAc
   if (!displayName) return { status: "error", message: "Informe seu nome." };
   if (input.password.length < MIN_PASSWORD_LENGTH) {
     return { status: "error", message: `Senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` };
+  }
+  if (!input.acceptedPrivacyPolicy) {
+    return { status: "error", message: "É preciso aceitar a Política de Privacidade para criar a conta." };
   }
 
   const { rows: existing } = await db<{ id: string }>(
@@ -60,6 +68,11 @@ export async function createAccount(input: CreateAccountInput): Promise<CreateAc
     `INSERT INTO household_members (household_id, user_id, role) VALUES ($1, $2, 'owner')`,
     [householdId, userId],
   );
+
+  await db(`INSERT INTO consent_records (user_id, policy_version) VALUES ($1, $2)`, [
+    userId,
+    PRIVACY_POLICY_VERSION,
+  ]);
 
   const token = await createAuthToken(userId, "verify_email");
   const link = `${appUrl()}/verify-email?token=${token}`;

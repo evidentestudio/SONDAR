@@ -3,6 +3,7 @@ import { getPool } from "@/lib/db";
 import { createAccount, verifyEmail, requestPasswordReset, resetPassword } from "@/lib/auth/signup";
 import { createAuthToken, consumeAuthToken } from "@/lib/auth/tokens";
 import { authenticateWithPassword } from "@/lib/auth/authenticate";
+import { PRIVACY_POLICY_VERSION } from "@/lib/legal/privacy-policy";
 import * as emailModule from "@/lib/email/send";
 
 const pool = getPool();
@@ -12,6 +13,10 @@ describe("cadastro de conta (Multi-Família)", () => {
 
   afterAll(async () => {
     if (cleanupEmails.length > 0) {
+      await pool.query(
+        `DELETE FROM consent_records WHERE user_id IN (SELECT id FROM users WHERE lower(email) = ANY($1))`,
+        [cleanupEmails],
+      );
       await pool.query(
         `DELETE FROM auth_tokens WHERE user_id IN (SELECT id FROM users WHERE lower(email) = ANY($1))`,
         [cleanupEmails],
@@ -36,6 +41,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email,
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       expect(result.status).toBe("created");
       if (result.status !== "created") throw new Error("unreachable");
@@ -57,6 +63,38 @@ describe("cadastro de conta (Multi-Família)", () => {
       expect(session?.userId).toBe(result.userId);
     });
 
+    it("recusa cadastro sem aceitar a política de privacidade", async () => {
+      const result = await createAccount({
+        householdName: "__cadastro_test__",
+        displayName: "Fulano",
+        email: "__signup_test_no_consent__@example.com",
+        password: "senha-valida-123",
+        acceptedPrivacyPolicy: false,
+      });
+      expect(result.status).toBe("error");
+    });
+
+    it("registra o consentimento com a versão vigente da política", async () => {
+      const email = "__signup_test_consent__@example.com";
+      cleanupEmails.push(email);
+
+      const result = await createAccount({
+        householdName: "__cadastro_test__",
+        displayName: "Fulano",
+        email,
+        password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
+      });
+      if (result.status !== "created") throw new Error("setup failed");
+
+      const { rows } = await pool.query<{ policy_version: string }>(
+        `SELECT policy_version FROM consent_records WHERE user_id = $1`,
+        [result.userId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].policy_version).toBe(PRIVACY_POLICY_VERSION);
+    });
+
     it("cria a conta mesmo se o envio do email de verificação falhar", async () => {
       const email = "__signup_test_email_fails__@example.com";
       cleanupEmails.push(email);
@@ -70,6 +108,7 @@ describe("cadastro de conta (Multi-Família)", () => {
           displayName: "Fulano",
           email,
           password: "senha-valida-123",
+          acceptedPrivacyPolicy: true,
         });
         expect(result.status).toBe("created");
         if (result.status !== "created") throw new Error("unreachable");
@@ -90,12 +129,14 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Primeira",
         email,
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       const second = await createAccount({
         householdName: "__cadastro_test__",
         displayName: "Segunda",
         email,
         password: "outra-senha-123",
+        acceptedPrivacyPolicy: true,
       });
       expect(second.status).toBe("error");
     });
@@ -105,6 +146,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email: "não-é-email",
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       expect(badEmail.status).toBe("error");
 
@@ -112,6 +154,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email: "__signup_test_3__@example.com",
         password: "curta",
+        acceptedPrivacyPolicy: true,
       });
       expect(shortPassword.status).toBe("error");
 
@@ -119,6 +162,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "  ",
         email: "__signup_test_4__@example.com",
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       expect(noName.status).toBe("error");
     });
@@ -133,6 +177,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email,
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       if (created.status !== "created") throw new Error("setup failed");
 
@@ -166,6 +211,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email,
         password: "senha-antiga-123",
+        acceptedPrivacyPolicy: true,
       });
       if (created.status !== "created") throw new Error("setup failed");
 
@@ -196,6 +242,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email,
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       if (created.status !== "created") throw new Error("setup failed");
 
@@ -220,6 +267,7 @@ describe("cadastro de conta (Multi-Família)", () => {
         displayName: "Fulano",
         email,
         password: "senha-valida-123",
+        acceptedPrivacyPolicy: true,
       });
       if (created.status !== "created") throw new Error("setup failed");
 

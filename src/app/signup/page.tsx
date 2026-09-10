@@ -10,6 +10,7 @@ export default function SignupPage() {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -21,7 +22,7 @@ export default function SignupPage() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ householdName, displayName, email, password }),
+        body: JSON.stringify({ householdName, displayName, email, password, acceptedPrivacyPolicy }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -89,6 +90,27 @@ export default function SignupPage() {
               className="min-h-11 rounded-lg border border-border-strong bg-card px-3 text-base text-ink outline-none focus:border-accent"
             />
             <span className="text-xs text-muted">Pelo menos 8 caracteres.</span>
+          </label>
+
+          <label className="flex items-start gap-2 text-sm text-ink-soft">
+            <input
+              type="checkbox"
+              required
+              checked={acceptedPrivacyPolicy}
+              onChange={(e) => setAcceptedPrivacyPolicy(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0"
+            />
+            <span>
+              Li e aceito a{" "}
+              <Link
+                href="/politica-privacidade"
+                target="_blank"
+                className="text-accent-dark hover:underline"
+              >
+                Política de Privacidade
+              </Link>
+              .
+            </span>
           </label>
 
           {error && <p className="text-sm text-rust">{error}</p>}

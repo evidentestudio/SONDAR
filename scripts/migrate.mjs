@@ -32,6 +32,7 @@ const files = [
   "db/004_fixes_round1.sql",
   "db/005_signup.sql",
   "db/006_rls.sql",
+  "db/007_lgpd_consent.sql",
 ];
 
 async function tableExists(client, name) {

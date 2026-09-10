@@ -17,12 +17,23 @@ o gatilho de quando revisitar.
 
 ## Segurança / LGPD (nascem juntas com Multi-Família)
 
-- Termo de consentimento com registro de aceite (usuário + versão + data).
-- Política de privacidade — texto jurídico precisa de revisão de advogado;
-  o conteúdo técnico (quem processa o dado: Vercel, Neon, Anthropic) já
-  está mapeado nesta conversa.
-- Exportar meus dados / excluir minha conta (direitos do titular).
-- Trilha de auditoria — a tabela `audit_log` já existe no schema desde a
+- ✅ **Termo de consentimento com registro de aceite** (2026-09-10) —
+  checkbox obrigatório no cadastro ("Li e aceito a Política de
+  Privacidade"), registrado em `consent_records` (usuário + versão da
+  política + data). `createAccount` recusa o cadastro sem esse aceite.
+- ✅ **Política de privacidade — rascunho técnico** (2026-09-10) — página
+  pública em `/politica-privacidade`, conteúdo em
+  `src/lib/legal/privacy-policy.ts`. Mapeia com precisão o que o Sondar
+  faz de verdade (dados coletados, operadores — Vercel, Neon, Anthropic,
+  Resend —, retenção, direitos do titular). **Falta**: revisão por
+  advogado antes de valer como documento legal definitivo (marcado com
+  aviso de rascunho na própria página) e preencher os campos pendentes
+  (razão social/CNPJ e contato do responsável).
+- ⬜ Exportar meus dados / excluir minha conta (direitos do titular) —
+  decisão já tomada: exclusão é soft delete imediato (some do app na
+  hora) + expurgo definitivo em até 30 dias. Falta implementar a tela em
+  Configurações.
+- ⬜ Trilha de auditoria — a tabela `audit_log` já existe no schema desde a
   Etapa 0, mas nunca foi usada. Serve tanto pra LGPD quanto para o futuro
   "desfazer".
 - **Gatilho: junto com a implementação de Multi-Família, antes da Etapa 5.**
@@ -72,7 +83,9 @@ o gatilho de quando revisitar.
    `_sondar_migrations` (junto com 004 e 005, que também estavam
    faltando no registro).
    tem a proteção ainda.
-4. ⬜ LGPD (ver seção acima).
+4. 🟡 LGPD — em andamento (ver seção "Segurança / LGPD" acima): consentimento
+   e política de privacidade concluídos; exportar/excluir dados e trilha de
+   auditoria ainda pendentes.
 5. ⬜ Cobrança — depende de decisão de negócio (preço/plano) antes de
    integrar qualquer serviço.
 
