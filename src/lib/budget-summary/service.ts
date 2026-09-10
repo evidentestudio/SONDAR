@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
 import type { CategoryType } from "@/lib/categories/service";
 
@@ -42,7 +42,8 @@ export async function getCategoryMonthSummary(
   const monthStart = monthToDbDate(monthKey);
   const monthEnd = monthToDbDate(nextMonthKey(monthKey));
 
-  const { rows } = await db<SummaryRow>(
+  const { rows } = await dbForHousehold<SummaryRow>(
+    householdId,
     `SELECT
        c.id, c.parent_id, c.name, c.color, c.category_type,
        e.gasto, b.amount AS orcado
@@ -124,7 +125,8 @@ export async function getMonthTotals(
   monthKey: string,
 ): Promise<{ gastoTotal: number; creditosTotal: number }> {
   const monthDate = monthToDbDate(monthKey);
-  const { rows } = await db<{ gasto_total: string | null; creditos_total: string | null }>(
+  const { rows } = await dbForHousehold<{ gasto_total: string | null; creditos_total: string | null }>(
+    householdId,
     `SELECT gasto_total, creditos_total FROM month_totals
      WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date`,
     [householdId, ledgerId, monthDate],
@@ -147,7 +149,8 @@ export async function getPaymentSourceTotals(
   monthKey: string,
 ): Promise<PaymentSourceTotal[]> {
   const monthDate = monthToDbDate(monthKey);
-  const { rows } = await db<{ payment_source_id: string; payment_source_name: string; total: string }>(
+  const { rows } = await dbForHousehold<{ payment_source_id: string; payment_source_name: string; total: string }>(
+    householdId,
     `SELECT payment_source_id, payment_source_name, total
      FROM payment_source_month_summary
      WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date

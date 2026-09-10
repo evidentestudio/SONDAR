@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 
 export type CategoryType = "normal" | "reserve" | "awaiting_review";
 
@@ -30,7 +30,8 @@ export async function isLeafCategory(
   ledgerId: string,
   categoryId: string,
 ): Promise<boolean> {
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `SELECT c.id FROM categories c
      WHERE c.id = $1 AND c.household_id = $2 AND c.ledger_id = $3 AND c.deleted_at IS NULL
        AND NOT EXISTS (
@@ -42,7 +43,8 @@ export async function isLeafCategory(
 }
 
 export async function getCategoryById(householdId: string, id: string): Promise<CategoryRow | null> {
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `SELECT * FROM categories WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
@@ -57,10 +59,12 @@ export async function getCategoryById(householdId: string, id: string): Promise<
  * (independent category trees), so household alone is no longer enough.
  */
 export async function findCanonicalCategory(
+  householdId: string,
   ledgerId: string,
   name: string,
 ): Promise<CategoryRow | null> {
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `SELECT * FROM categories
      WHERE ledger_id = $1 AND deleted_at IS NULL
        AND name_normalized = lower(immutable_unaccent($2))`,
@@ -71,7 +75,8 @@ export async function findCanonicalCategory(
 
 /** Creates the single system category every ledger needs, idempotently. */
 export async function ensureAwaitingReviewCategory(householdId: string, ledgerId: string): Promise<string> {
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `SELECT id FROM categories
      WHERE ledger_id = $1 AND category_type = 'awaiting_review' AND deleted_at IS NULL
      LIMIT 1`,
@@ -79,7 +84,8 @@ export async function ensureAwaitingReviewCategory(householdId: string, ledgerId
   );
   if (rows[0]) return rows[0].id;
 
-  const { rows: created } = await db<{ id: string }>(
+  const { rows: created } = await dbForHousehold<{ id: string }>(
+    householdId,
     `INSERT INTO categories (household_id, ledger_id, name, category_type)
      VALUES ($1, $2, 'Aguardando Revisão', 'awaiting_review')
      RETURNING id`,
@@ -89,7 +95,8 @@ export async function ensureAwaitingReviewCategory(householdId: string, ledgerId
 }
 
 export async function getCategoryTree(householdId: string, ledgerId: string): Promise<CategoryNode[]> {
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `SELECT * FROM categories
      WHERE household_id = $1 AND ledger_id = $2 AND deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(name)) ASC`,
@@ -117,7 +124,8 @@ export async function getCategoryTree(householdId: string, ledgerId: string): Pr
 
 /** Leaf categories only — the only ones allowed to receive entries directly. */
 export async function listLeafCategories(householdId: string, ledgerId: string): Promise<CategoryRow[]> {
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `SELECT c.* FROM categories c
      WHERE c.household_id = $1 AND c.ledger_id = $2 AND c.deleted_at IS NULL
        AND NOT EXISTS (
@@ -170,7 +178,7 @@ export async function createCategory(
     }
   }
 
-  const existing = await findCanonicalCategory(ledgerId, name);
+  const existing = await findCanonicalCategory(householdId, ledgerId, name);
 
   if (existing) {
     const existingIsTopLevel = existing.parent_id === null;
@@ -183,7 +191,8 @@ export async function createCategory(
       // Fusion: reparent the existing row in place. Same id, so every
       // financial_entries.category_id pointing at it stays valid — nothing
       // to move, nothing duplicated.
-      const { rows } = await db<CategoryRow>(
+      const { rows } = await dbForHousehold<CategoryRow>(
+        householdId,
         `UPDATE categories SET parent_id = $1, color = COALESCE($2, color) WHERE id = $3 RETURNING *`,
         [parentId, input.color ?? null, existing.id],
       );
@@ -193,7 +202,8 @@ export async function createCategory(
     return { status: "error", message: `Já existe uma categoria chamada "${existing.name}".` };
   }
 
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `INSERT INTO categories (household_id, ledger_id, parent_id, name, category_type, color, icon)
      VALUES ($1, $2, $3, $4, 'normal', $5, $6)
      RETURNING *`,
@@ -228,7 +238,7 @@ export async function updateCategory(
     if (!trimmed) return { status: "error", message: "Nome não pode ser vazio." };
     // Mesma regra da criação: categoria-mãe em caixa alta, subcategoria livre.
     const name = category.parent_id === null ? trimmed.toUpperCase() : trimmed;
-    const existing = await findCanonicalCategory(category.ledger_id, name);
+    const existing = await findCanonicalCategory(householdId, category.ledger_id, name);
     if (existing && existing.id !== id) {
       return { status: "error", message: `Já existe uma categoria chamada "${existing.name}".` };
     }
@@ -247,7 +257,8 @@ export async function updateCategory(
   if (sets.length === 0) return { status: "updated", category };
 
   values.push(id);
-  const { rows } = await db<CategoryRow>(
+  const { rows } = await dbForHousehold<CategoryRow>(
+    householdId,
     `UPDATE categories SET ${sets.join(", ")} WHERE id = $${values.length} RETURNING *`,
     values,
   );
@@ -272,7 +283,8 @@ export async function deleteCategory(
   const category = await getCategoryById(householdId, categoryId);
   if (!category) return { status: "error", message: "Categoria não encontrada." };
 
-  const { rows: childRows } = await db<{ count: string }>(
+  const { rows: childRows } = await dbForHousehold<{ count: string }>(
+    householdId,
     `SELECT count(*)::text AS count FROM categories WHERE parent_id = $1 AND deleted_at IS NULL`,
     [categoryId],
   );
@@ -283,7 +295,8 @@ export async function deleteCategory(
     };
   }
 
-  const { rows: entryRows } = await db<{ count: string }>(
+  const { rows: entryRows } = await dbForHousehold<{ count: string }>(
+    householdId,
     `SELECT count(*)::text AS count FROM financial_entries WHERE category_id = $1 AND deleted_at IS NULL`,
     [categoryId],
   );
@@ -299,18 +312,20 @@ export async function deleteCategory(
     }
     const target = await getCategoryById(householdId, decision.moveToCategoryId);
     if (!target) return { status: "error", message: "Categoria de destino não encontrada." };
-    await db(
+    await dbForHousehold(
+      householdId,
       `UPDATE financial_entries SET category_id = $1, updated_at = now()
        WHERE category_id = $2 AND deleted_at IS NULL`,
       [decision.moveToCategoryId, categoryId],
     );
   } else if (entryCount > 0 && decision?.onEntries === "delete") {
-    await db(
+    await dbForHousehold(
+      householdId,
       `UPDATE financial_entries SET deleted_at = now() WHERE category_id = $1 AND deleted_at IS NULL`,
       [categoryId],
     );
   }
 
-  await db(`UPDATE categories SET deleted_at = now() WHERE id = $1`, [categoryId]);
+  await dbForHousehold(householdId, `UPDATE categories SET deleted_at = now() WHERE id = $1`, [categoryId]);
   return { status: "deleted" };
 }

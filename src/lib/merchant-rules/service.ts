@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 import { normalizeStr, fuzzyMatch } from "@/lib/text/normalize";
 import { isLeafCategory } from "@/lib/categories/service";
 
@@ -24,7 +24,8 @@ const SELECT_RULE = `
 `;
 
 export async function listMerchantRules(householdId: string): Promise<MerchantRuleRow[]> {
-  const { rows } = await db<MerchantRuleRow>(
+  const { rows } = await dbForHousehold<MerchantRuleRow>(
+    householdId,
     `${SELECT_RULE}
      WHERE mr.household_id = $1 AND mr.deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(mr.pattern)) ASC`,
@@ -37,7 +38,8 @@ async function findCanonicalRule(
   householdId: string,
   pattern: string,
 ): Promise<MerchantRuleRow | null> {
-  const { rows } = await db<MerchantRuleRow>(
+  const { rows } = await dbForHousehold<MerchantRuleRow>(
+    householdId,
     `${SELECT_RULE}
      WHERE mr.household_id = $1 AND mr.deleted_at IS NULL
        AND mr.pattern_normalized = lower(immutable_unaccent($2))`,
@@ -67,16 +69,19 @@ export async function createMerchantRule(
     return { status: "error", message: `Já existe uma regra para "${existing.pattern}".` };
   }
 
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `INSERT INTO merchant_rules (household_id, pattern, category_id, is_ambiguous)
      VALUES ($1, $2, $3, $4)
      RETURNING id`,
     [householdId, pattern, input.categoryId, input.isAmbiguous ?? false],
   );
 
-  const [rule] = await db<MerchantRuleRow>(`${SELECT_RULE} WHERE mr.id = $1`, [rows[0].id]).then(
-    (r) => r.rows,
-  );
+  const [rule] = await dbForHousehold<MerchantRuleRow>(
+    householdId,
+    `${SELECT_RULE} WHERE mr.id = $1`,
+    [rows[0].id],
+  ).then((r) => r.rows);
 
   return { status: "created", rule };
 }
@@ -90,7 +95,8 @@ export async function updateMerchantRule(
   id: string,
   input: { pattern?: string; categoryId?: string; ledgerId?: string; isAmbiguous?: boolean },
 ): Promise<UpdateMerchantRuleResult> {
-  const { rows: existingRows } = await db<{ id: string }>(
+  const { rows: existingRows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `SELECT id FROM merchant_rules WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
@@ -123,18 +129,25 @@ export async function updateMerchantRule(
 
   if (sets.length > 0) {
     values.push(id);
-    await db(`UPDATE merchant_rules SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
+    await dbForHousehold(
+      householdId,
+      `UPDATE merchant_rules SET ${sets.join(", ")} WHERE id = $${values.length}`,
+      values,
+    );
   }
 
-  const { rows } = await db<MerchantRuleRow>(`${SELECT_RULE} WHERE mr.id = $1`, [id]);
+  const { rows } = await dbForHousehold<MerchantRuleRow>(householdId, `${SELECT_RULE} WHERE mr.id = $1`, [
+    id,
+  ]);
   return { status: "updated", rule: rows[0] };
 }
 
 export async function deleteMerchantRule(householdId: string, id: string): Promise<void> {
-  await db(`UPDATE merchant_rules SET deleted_at = now() WHERE id = $1 AND household_id = $2`, [
-    id,
+  await dbForHousehold(
     householdId,
-  ]);
+    `UPDATE merchant_rules SET deleted_at = now() WHERE id = $1 AND household_id = $2`,
+    [id, householdId],
+  );
 }
 
 export type MerchantRuleMatch =

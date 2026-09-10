@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
 import { ensureAwaitingReviewCategory, isLeafCategory } from "@/lib/categories/service";
 import { getLedgerById } from "@/lib/ledgers/service";
@@ -42,7 +42,8 @@ export async function listEntries(
     paymentSourceClause = `AND e.payment_source_id = $${values.length}`;
   }
 
-  const { rows } = await db<EntryRow>(
+  const { rows } = await dbForHousehold<EntryRow>(
+    householdId,
     `SELECT
        e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
        e.category_id, c.name AS category_name, c.category_type AS category_type,
@@ -122,14 +123,16 @@ export async function createEntry(
 
   let paymentSourceId: string | null = input.paymentSourceId ?? null;
   if (paymentSourceId) {
-    const { rows } = await db<{ id: string }>(
+    const { rows } = await dbForHousehold<{ id: string }>(
+      householdId,
       `SELECT id FROM payment_sources WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
       [paymentSourceId, householdId],
     );
     if (!rows[0]) paymentSourceId = null;
   }
 
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `INSERT INTO financial_entries
        (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by, installment_plan_id, installment_number)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -169,7 +172,8 @@ export async function updateEntry(
   id: string,
   input: UpdateEntryInput,
 ): Promise<UpdateEntryResult> {
-  const { rows: existingRows } = await db<{ id: string; entry_type: EntryType; ledger_id: string }>(
+  const { rows: existingRows } = await dbForHousehold<{ id: string; entry_type: EntryType; ledger_id: string }>(
+    householdId,
     `SELECT id, entry_type, ledger_id FROM financial_entries WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
@@ -234,12 +238,17 @@ export async function updateEntry(
 
   sets.push(`updated_at = now()`);
   values.push(id);
-  await db(`UPDATE financial_entries SET ${sets.join(", ")} WHERE id = $${values.length}`, values);
+  await dbForHousehold(
+    householdId,
+    `UPDATE financial_entries SET ${sets.join(", ")} WHERE id = $${values.length}`,
+    values,
+  );
   return { status: "updated" };
 }
 
 export async function deleteEntry(householdId: string, id: string): Promise<void> {
-  await db(
+  await dbForHousehold(
+    householdId,
     `UPDATE financial_entries SET deleted_at = now() WHERE id = $1 AND household_id = $2`,
     [id, householdId],
   );
@@ -258,7 +267,8 @@ export async function checkPossibleDuplicate(
   entryDate: string,
   excludeEntryId?: string,
 ): Promise<boolean> {
-  const { rows } = await db(
+  const { rows } = await dbForHousehold(
+    householdId,
     `SELECT 1 FROM financial_entries
      WHERE household_id = $1 AND category_id = $2
        AND ABS(amount - $3) < 0.005

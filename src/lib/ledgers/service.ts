@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 
 export type LedgerRow = {
   id: string;
@@ -13,13 +13,15 @@ export type LedgerRow = {
 
 /** Creates the household's "Principal" ledger, idempotently. */
 export async function ensureDefaultLedger(householdId: string): Promise<string> {
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `SELECT id FROM ledgers WHERE household_id = $1 AND is_default AND deleted_at IS NULL LIMIT 1`,
     [householdId],
   );
   if (rows[0]) return rows[0].id;
 
-  const { rows: created } = await db<{ id: string }>(
+  const { rows: created } = await dbForHousehold<{ id: string }>(
+    householdId,
     `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
     [householdId],
   );
@@ -41,7 +43,8 @@ export async function resolveLedgerId(householdId: string, requested?: string | 
 }
 
 export async function listLedgers(householdId: string): Promise<LedgerRow[]> {
-  const { rows } = await db<LedgerRow>(
+  const { rows } = await dbForHousehold<LedgerRow>(
+    householdId,
     `SELECT * FROM ledgers WHERE household_id = $1 AND deleted_at IS NULL
      ORDER BY is_default DESC, lower(immutable_unaccent(name)) ASC`,
     [householdId],
@@ -50,7 +53,8 @@ export async function listLedgers(householdId: string): Promise<LedgerRow[]> {
 }
 
 export async function getLedgerById(householdId: string, id: string): Promise<LedgerRow | null> {
-  const { rows } = await db<LedgerRow>(
+  const { rows } = await dbForHousehold<LedgerRow>(
+    householdId,
     `SELECT * FROM ledgers WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
@@ -58,7 +62,8 @@ export async function getLedgerById(householdId: string, id: string): Promise<Le
 }
 
 async function findCanonicalLedger(householdId: string, name: string): Promise<LedgerRow | null> {
-  const { rows } = await db<LedgerRow>(
+  const { rows } = await dbForHousehold<LedgerRow>(
+    householdId,
     `SELECT * FROM ledgers
      WHERE household_id = $1 AND deleted_at IS NULL
        AND name_normalized = lower(immutable_unaccent($2))`,
@@ -84,7 +89,8 @@ export async function createLedger(
     return { status: "error", message: `Já existe um orçamento chamado "${existing.name}".` };
   }
 
-  const { rows } = await db<LedgerRow>(
+  const { rows } = await dbForHousehold<LedgerRow>(
+    householdId,
     `INSERT INTO ledgers (household_id, name) VALUES ($1, $2) RETURNING *`,
     [householdId, name],
   );
@@ -111,7 +117,8 @@ export async function updateLedger(
     return { status: "error", message: `Já existe um orçamento chamado "${existing.name}".` };
   }
 
-  const { rows } = await db<LedgerRow>(
+  const { rows } = await dbForHousehold<LedgerRow>(
+    householdId,
     `UPDATE ledgers SET name = $1, updated_at = now() WHERE id = $2 RETURNING *`,
     [name, id],
   );
@@ -134,7 +141,8 @@ export async function deleteLedger(householdId: string, id: string): Promise<Del
     return { status: "error", message: "O orçamento Principal não pode ser excluído." };
   }
 
-  const { rows } = await db<{ count: string }>(
+  const { rows } = await dbForHousehold<{ count: string }>(
+    householdId,
     `SELECT count(*)::text AS count FROM categories WHERE ledger_id = $1 AND deleted_at IS NULL`,
     [id],
   );
@@ -145,6 +153,6 @@ export async function deleteLedger(householdId: string, id: string): Promise<Del
     };
   }
 
-  await db(`UPDATE ledgers SET deleted_at = now() WHERE id = $1`, [id]);
+  await dbForHousehold(householdId, `UPDATE ledgers SET deleted_at = now() WHERE id = $1`, [id]);
   return { status: "deleted" };
 }

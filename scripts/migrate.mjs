@@ -31,6 +31,7 @@ const files = [
   "db/003_ledgers.sql",
   "db/004_fixes_round1.sql",
   "db/005_signup.sql",
+  "db/006_rls.sql",
 ];
 
 async function tableExists(client, name) {

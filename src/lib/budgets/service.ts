@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 import { monthToDbDate, previousMonthKey } from "@/lib/date";
 
 export type BudgetRow = {
@@ -25,14 +25,16 @@ export async function setBudget(
     return { status: "error", message: "Valor de orçamento inválido." };
   }
 
-  const { rows: catRows } = await db(
+  const { rows: catRows } = await dbForHousehold(
+    householdId,
     `SELECT id FROM categories WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [categoryId, householdId],
   );
   if (!catRows[0]) return { status: "error", message: "Categoria não encontrada." };
 
   const monthDate = monthToDbDate(monthKey);
-  const { rows } = await db<BudgetRow>(
+  const { rows } = await dbForHousehold<BudgetRow>(
+    householdId,
     `INSERT INTO budgets (household_id, category_id, month, amount)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount, updated_at = now()
@@ -51,7 +53,8 @@ export async function copyBudgetsFromPreviousMonth(
   const prevDate = monthToDbDate(previousMonthKey(monthKey));
   const targetDate = monthToDbDate(monthKey);
 
-  const { rows } = await db(
+  const { rows } = await dbForHousehold(
+    householdId,
     `INSERT INTO budgets (household_id, category_id, month, amount)
      SELECT b.household_id, b.category_id, $3::date, b.amount
      FROM budgets b

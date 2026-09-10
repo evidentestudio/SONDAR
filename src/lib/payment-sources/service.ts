@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 
 export type PaymentSourceRow = {
   id: string;
@@ -13,7 +13,8 @@ export type PaymentSourceRow = {
 };
 
 export async function listPaymentSources(householdId: string): Promise<PaymentSourceRow[]> {
-  const { rows } = await db<PaymentSourceRow>(
+  const { rows } = await dbForHousehold<PaymentSourceRow>(
+    householdId,
     `SELECT * FROM payment_sources
      WHERE household_id = $1 AND deleted_at IS NULL
      ORDER BY lower(immutable_unaccent(name)) ASC`,
@@ -26,7 +27,8 @@ async function findCanonicalPaymentSource(
   householdId: string,
   name: string,
 ): Promise<PaymentSourceRow | null> {
-  const { rows } = await db<PaymentSourceRow>(
+  const { rows } = await dbForHousehold<PaymentSourceRow>(
+    householdId,
     `SELECT * FROM payment_sources
      WHERE household_id = $1 AND deleted_at IS NULL
        AND name_normalized = lower(immutable_unaccent($2))`,
@@ -51,7 +53,8 @@ export async function createPaymentSource(
     return { status: "error", message: `Já existe uma forma de pagamento chamada "${existing.name}".` };
   }
 
-  const { rows } = await db<PaymentSourceRow>(
+  const { rows } = await dbForHousehold<PaymentSourceRow>(
+    householdId,
     `INSERT INTO payment_sources (household_id, name, color) VALUES ($1, $2, $3) RETURNING *`,
     [householdId, name, input.color ?? null],
   );
@@ -67,7 +70,8 @@ export async function updatePaymentSource(
   id: string,
   input: { name?: string; color?: string | null },
 ): Promise<UpdatePaymentSourceResult> {
-  const { rows: existingRows } = await db<PaymentSourceRow>(
+  const { rows: existingRows } = await dbForHousehold<PaymentSourceRow>(
+    householdId,
     `SELECT * FROM payment_sources WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
@@ -95,7 +99,8 @@ export async function updatePaymentSource(
   if (sets.length === 0) return { status: "updated", source: current };
 
   values.push(id);
-  const { rows } = await db<PaymentSourceRow>(
+  const { rows } = await dbForHousehold<PaymentSourceRow>(
+    householdId,
     `UPDATE payment_sources SET ${sets.join(", ")} WHERE id = $${values.length} RETURNING *`,
     values,
   );
@@ -106,7 +111,8 @@ export async function updatePaymentSource(
  * the default and unsets every other row in the same statement, so there's
  * never a window with zero or two defaults. */
 export async function setDefaultPaymentSource(householdId: string, id: string): Promise<void> {
-  await db(
+  await dbForHousehold(
+    householdId,
     `UPDATE payment_sources SET is_default = (id = $2)
      WHERE household_id = $1 AND deleted_at IS NULL`,
     [householdId, id],
@@ -116,18 +122,21 @@ export async function setDefaultPaymentSource(householdId: string, id: string): 
 export async function deletePaymentSource(householdId: string, id: string): Promise<void> {
   // Origin is a tag, not a required classification — detach rather than
   // block deletion or leave a dangling reference to a hidden row.
-  await db(
+  await dbForHousehold(
+    householdId,
     `UPDATE financial_entries SET payment_source_id = NULL, updated_at = now()
      WHERE payment_source_id = $1 AND household_id = $2`,
     [id, householdId],
   );
-  await db(
+  await dbForHousehold(
+    householdId,
     `UPDATE installment_plans SET payment_source_id = NULL
      WHERE payment_source_id = $1 AND household_id = $2`,
     [id, householdId],
   );
-  await db(`UPDATE payment_sources SET deleted_at = now() WHERE id = $1 AND household_id = $2`, [
-    id,
+  await dbForHousehold(
     householdId,
-  ]);
+    `UPDATE payment_sources SET deleted_at = now() WHERE id = $1 AND household_id = $2`,
+    [id, householdId],
+  );
 }

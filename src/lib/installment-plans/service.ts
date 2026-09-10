@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, dbForHousehold } from "@/lib/db";
 import { addMonthsToKey, currentMonthKey, dbDateToMonthKey, monthToDbDate } from "@/lib/date";
 import { ensureAwaitingReviewCategory, isLeafCategory } from "@/lib/categories/service";
 import { createEntry } from "@/lib/entries/service";
@@ -98,7 +98,8 @@ export async function createInstallmentPlan(
     -(input.currentInstallmentNumber - 1),
   );
 
-  const { rows } = await db<InstallmentPlanRow>(
+  const { rows } = await dbForHousehold<InstallmentPlanRow>(
+    householdId,
     `INSERT INTO installment_plans
        (household_id, ledger_id, description, category_id, payment_source_id, installment_amount, total_installments, anchor_month)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -133,7 +134,7 @@ export async function createInstallmentPlan(
   if (entryResult.status === "error") {
     // The plan without any entry is useless — roll it back rather than
     // leaving an orphaned installment_plans row behind.
-    await db(`DELETE FROM installment_plans WHERE id = $1`, [plan.id]);
+    await dbForHousehold(householdId, `DELETE FROM installment_plans WHERE id = $1`, [plan.id]);
     return { status: "error", message: entryResult.message };
   }
 
@@ -144,7 +145,8 @@ export async function listInstallmentPlans(
   householdId: string,
   ledgerId: string,
 ): Promise<InstallmentPlanRow[]> {
-  const { rows } = await db<InstallmentPlanRow>(
+  const { rows } = await dbForHousehold<InstallmentPlanRow>(
+    householdId,
     `SELECT p.*, c.name AS category_name
      FROM installment_plans p
      JOIN categories c ON c.id = p.category_id
@@ -202,7 +204,8 @@ export async function getInstallmentForecastGrid(
     paymentSourceClause = `AND p.payment_source_id = $${values.length}`;
   }
 
-  const { rows: plans } = await db<InstallmentPlanRow & { payment_source_name: string | null }>(
+  const { rows: plans } = await dbForHousehold<InstallmentPlanRow & { payment_source_name: string | null }>(
+    householdId,
     `SELECT p.*, c.name AS category_name, ps.name AS payment_source_name
      FROM installment_plans p
      JOIN categories c ON c.id = p.category_id
@@ -213,7 +216,8 @@ export async function getInstallmentForecastGrid(
   );
   if (plans.length === 0) return { months: [], plans: [], totalsByMonth: {} };
 
-  const { rows: realRows } = await db<{ installment_plan_id: string; month: string; amount: string }>(
+  const { rows: realRows } = await dbForHousehold<{ installment_plan_id: string; month: string; amount: string }>(
+    householdId,
     `SELECT installment_plan_id, to_char(entry_date, 'YYYY-MM') AS month, amount
      FROM financial_entries
      WHERE installment_plan_id = ANY($1::uuid[]) AND deleted_at IS NULL
@@ -279,13 +283,14 @@ export async function stopInstallmentPlan(
   householdId: string,
   id: string,
 ): Promise<StopInstallmentPlanResult> {
-  const { rows } = await db<{ id: string }>(
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
     `SELECT id FROM installment_plans WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
     [id, householdId],
   );
   if (!rows[0]) return { status: "error", message: "Parcelamento não encontrado." };
 
-  await db(`UPDATE installment_plans SET deleted_at = now() WHERE id = $1`, [id]);
+  await dbForHousehold(householdId, `UPDATE installment_plans SET deleted_at = now() WHERE id = $1`, [id]);
   return { status: "stopped" };
 }
 
@@ -314,6 +319,13 @@ export async function advanceInstallmentsForMonth(monthKey: string = currentMont
 }> {
   const monthDate = monthToDbDate(monthKey);
 
+  // Deliberately db() (unrestricted owner role), not dbForHousehold: this is
+  // the one legitimate cross-household query in the app — the monthly cron
+  // needs to find due plans across every household in one pass, which the
+  // RLS-restricted role (scoped to a single household per query) can't do.
+  // Every plan found here is then processed through createEntry/
+  // ensureAwaitingReviewCategory/isLeafCategory, which DO go through
+  // dbForHousehold using that plan's own household_id.
   const { rows: due } = await db<DuePlanRow>(
     `SELECT
        p.id, p.household_id, p.ledger_id, p.description, p.category_id, p.payment_source_id,

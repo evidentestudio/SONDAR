@@ -62,7 +62,7 @@ export async function processExtractedItems(
       needsReview = true;
       categoryName = "Aguardando Revisão";
     } else {
-      const canonical = raw.category ? await findCanonicalCategory(ledgerId, raw.category) : null;
+      const canonical = raw.category ? await findCanonicalCategory(householdId, ledgerId, raw.category) : null;
       if (canonical && (await isLeafCategory(householdId, ledgerId, canonical.id))) {
         categoryId = canonical.id;
         categoryName = canonical.name;

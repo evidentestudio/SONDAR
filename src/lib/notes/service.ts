@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { dbForHousehold } from "@/lib/db";
 
 export type NoteRow = {
   id: string;
@@ -11,7 +11,8 @@ export type NoteRow = {
 };
 
 export async function listNotes(householdId: string): Promise<NoteRow[]> {
-  const { rows } = await db<NoteRow>(
+  const { rows } = await dbForHousehold<NoteRow>(
+    householdId,
     `SELECT * FROM notes WHERE household_id = $1 AND deleted_at IS NULL ORDER BY created_at DESC`,
     [householdId],
   );
@@ -25,7 +26,8 @@ export async function createNote(
 ): Promise<NoteRow | null> {
   const trimmed = content.trim();
   if (!trimmed) return null;
-  const { rows } = await db<NoteRow>(
+  const { rows } = await dbForHousehold<NoteRow>(
+    householdId,
     `INSERT INTO notes (household_id, content, created_by) VALUES ($1, $2, $3) RETURNING *`,
     [householdId, trimmed, createdBy ?? null],
   );
@@ -33,7 +35,7 @@ export async function createNote(
 }
 
 export async function setNoteDone(householdId: string, id: string, isDone: boolean): Promise<void> {
-  await db(`UPDATE notes SET is_done = $1 WHERE id = $2 AND household_id = $3`, [
+  await dbForHousehold(householdId, `UPDATE notes SET is_done = $1 WHERE id = $2 AND household_id = $3`, [
     isDone,
     id,
     householdId,
@@ -41,7 +43,7 @@ export async function setNoteDone(householdId: string, id: string, isDone: boole
 }
 
 export async function deleteNote(householdId: string, id: string): Promise<void> {
-  await db(`UPDATE notes SET deleted_at = now() WHERE id = $1 AND household_id = $2`, [
+  await dbForHousehold(householdId, `UPDATE notes SET deleted_at = now() WHERE id = $1 AND household_id = $2`, [
     id,
     householdId,
   ]);
