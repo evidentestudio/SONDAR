@@ -110,11 +110,16 @@ export function InstallmentForecast({
                         {grid.months.map((m) => {
                           const cell = cellByMonth.get(m);
                           return (
-                            <td key={m} className="money whitespace-nowrap px-3 py-2 text-right">
+                            <td key={m} className="whitespace-nowrap px-3 py-2 text-right">
                               {cell ? (
-                                <span className={cell.isReal ? "text-ink" : "italic text-muted"}>
-                                  {cell.installmentNumber}/{plan.totalInstallments}-{formatBRL(cell.amount)}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-[10px] uppercase tracking-wide text-muted">
+                                    Parcela {cell.installmentNumber}/{plan.totalInstallments}
+                                  </span>
+                                  <span className={`money ${cell.isReal ? "text-ink" : "italic text-muted"}`}>
+                                    {formatBRL(cell.amount)}
+                                  </span>
+                                </div>
                               ) : (
                                 <span className="text-border-strong">—</span>
                               )}
