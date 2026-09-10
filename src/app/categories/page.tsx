@@ -24,7 +24,7 @@ export default async function CategoriesPage({
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-paper px-6 py-4">
         <div className="flex items-center gap-4">
           <Link href="/" className="text-sm text-muted hover:text-ink">
             ← Início
