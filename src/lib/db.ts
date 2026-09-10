@@ -1,4 +1,4 @@
-import { Pool, types, type QueryResultRow } from "pg";
+import { Pool, types, type QueryResultRow, type QueryResult } from "pg";
 
 declare global {
   var __sondarPool: Pool | undefined;
@@ -67,6 +67,33 @@ export function db<T extends QueryResultRow = QueryResultRow>(
   params?: unknown[],
 ) {
   return getPool().query<T>(text, params);
+}
+
+export type TransactionQuery = <T extends QueryResultRow = QueryResultRow>(
+  text: string,
+  params?: unknown[],
+) => Promise<QueryResult<T>>;
+
+/**
+ * Runs several statements against the unrestricted (owner) pool as one
+ * all-or-nothing transaction — for multi-step writes where a failure partway
+ * through must not leave a half-finished result behind (e.g. signup: a
+ * household created but no matching consent record because a later insert
+ * failed). Rolls back and rethrows on any error.
+ */
+export async function withTransaction<T>(fn: (query: TransactionQuery) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn((text, params) => client.query(text, params));
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**

@@ -95,6 +95,40 @@ describe("cadastro de conta (Multi-Família)", () => {
       expect(rows[0].policy_version).toBe(PRIVACY_POLICY_VERSION);
     });
 
+    it("não deixa household/usuário órfãos se algo falhar no meio do cadastro", async () => {
+      // Simula uma falha a meio caminho da transação: insere direto um
+      // usuário soft-deletado com o mesmo email (a checagem de duplicidade
+      // do createAccount ignora deleted_at, então ela não pega isso — mas a
+      // constraint UNIQUE de verdade no banco pega, no meio da transação).
+      // Se a transação não reverter direito, sobra um household criado sem
+      // usuário nenhum ligado a ele.
+      const email = "__signup_test_rollback__@example.com";
+      const householdName = "__cadastro_test_rollback__";
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO users (email, display_name, password_hash, deleted_at) VALUES ($1, 'Antigo', 'x', now()) RETURNING id`,
+        [email],
+      );
+      const oldUserId = rows[0].id;
+
+      try {
+        const result = await createAccount({
+          householdName,
+          displayName: "Fulano",
+          email,
+          password: "senha-valida-123",
+          acceptedPrivacyPolicy: true,
+        });
+        expect(result.status).toBe("error");
+
+        const { rows: householdRows } = await pool.query(`SELECT id FROM households WHERE name = $1`, [
+          householdName,
+        ]);
+        expect(householdRows).toHaveLength(0);
+      } finally {
+        await pool.query(`DELETE FROM users WHERE id = $1`, [oldUserId]);
+      }
+    });
+
     it("cria a conta mesmo se o envio do email de verificação falhar", async () => {
       const email = "__signup_test_email_fails__@example.com";
       cleanupEmails.push(email);

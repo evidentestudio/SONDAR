@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { db, withTransaction } from "@/lib/db";
 import { hashPassword } from "./password";
 import { createAuthToken, consumeAuthToken } from "./tokens";
 import { sendEmail, appUrl } from "@/lib/email/send";
@@ -52,27 +52,36 @@ export async function createAccount(input: CreateAccountInput): Promise<CreateAc
 
   const passwordHash = await hashPassword(input.password);
 
-  const { rows: householdRows } = await db<{ id: string }>(
-    `INSERT INTO households (name) VALUES ($1) RETURNING id`,
-    [householdName],
-  );
-  const householdId = householdRows[0].id;
+  // Tudo isto precisa ser tudo-ou-nada: sem a transação, uma falha depois do
+  // household/usuário já criados (ex: a própria consent_records ainda não
+  // existir por uma migração pendente) deixava pra trás uma conta pela
+  // metade — criada no banco, mas sem consentimento registrado, sem token de
+  // verificação e sem sessão, enquanto o cadastro aparecia como erro.
+  const { householdId, userId } = await withTransaction(async (query) => {
+    const { rows: householdRows } = await query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ($1) RETURNING id`,
+      [householdName],
+    );
+    const householdId = householdRows[0].id;
 
-  const { rows: userRows } = await db<{ id: string }>(
-    `INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3) RETURNING id`,
-    [email, displayName, passwordHash],
-  );
-  const userId = userRows[0].id;
+    const { rows: userRows } = await query<{ id: string }>(
+      `INSERT INTO users (email, display_name, password_hash) VALUES ($1, $2, $3) RETURNING id`,
+      [email, displayName, passwordHash],
+    );
+    const userId = userRows[0].id;
 
-  await db(
-    `INSERT INTO household_members (household_id, user_id, role) VALUES ($1, $2, 'owner')`,
-    [householdId, userId],
-  );
+    await query(
+      `INSERT INTO household_members (household_id, user_id, role) VALUES ($1, $2, 'owner')`,
+      [householdId, userId],
+    );
 
-  await db(`INSERT INTO consent_records (user_id, policy_version) VALUES ($1, $2)`, [
-    userId,
-    PRIVACY_POLICY_VERSION,
-  ]);
+    await query(`INSERT INTO consent_records (user_id, policy_version) VALUES ($1, $2)`, [
+      userId,
+      PRIVACY_POLICY_VERSION,
+    ]);
+
+    return { householdId, userId };
+  });
 
   const token = await createAuthToken(userId, "verify_email");
   const link = `${appUrl()}/verify-email?token=${token}`;
