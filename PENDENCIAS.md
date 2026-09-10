@@ -49,12 +49,14 @@ o gatilho de quando revisitar.
 ## Multi-Família — em andamento (ordem combinada: 1 → 2 → 3, depois LGPD e cobrança)
 
 1. ✅ **Cadastro de conta** (2026-09-10) — signup, confirmação de email,
-   esqueci/redefinir senha. Testado end-to-end. **Falta**: criar uma conta
-   de verdade em resend.com e configurar `RESEND_API_KEY` + `EMAIL_FROM`
-   no Vercel — sem isso, emails de cadastro/reset em produção só ficam nos
-   logs do servidor (ninguém recebe de verdade). Também falta configurar
-   `APP_URL` em produção com o domínio real, senão os links do email
-   apontam pro localhost.
+   esqueci/redefinir senha. Testado end-to-end em produção, inclusive
+   recebimento real do email de redefinição de senha via Resend.
+   **Falta**: o Resend está em modo sandbox — só entrega email pro
+   endereço dono da conta (`evidentestudio@gmail.com`), não pra clientes
+   de verdade. Pra enviar pra qualquer destinatário é preciso verificar um
+   domínio próprio em resend.com/domains e trocar o `EMAIL_FROM` pra usar
+   esse domínio. **Gatilho: antes de abrir cadastro pra usuários reais
+   (fora da equipe).**
 2. ⬜ Abrir o sistema pra múltiplas famílias — na prática já funciona
    (login/sessão nunca assumiram household único; só faltava o cadastro
    do item 1 acima).
