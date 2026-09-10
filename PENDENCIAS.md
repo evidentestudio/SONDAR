@@ -41,8 +41,8 @@ o gatilho de quando revisitar.
   última ação vs. histórico navegável).
 - Regras de estabelecimento não alteradas na revisão de fatura deveriam
   salvar sozinhas — falta alinhar o critério exato de "não alterada".
-- Calculadora no cabeçalho + cabeçalho fixo durante rolagem (opinião já
-  dada: vale a pena, barato de implementar).
+- Calculadora no cabeçalho (cabeçalho fixo durante rolagem já implementado
+  em 2026-09-10, em todas as telas).
 - Protótipo de chat com IA pra tirar dúvidas sobre a planilha (respostas
   curtas + limite de uso).
 
