@@ -46,8 +46,25 @@ o gatilho de quando revisitar.
 - Protótipo de chat com IA pra tirar dúvidas sobre a planilha (respostas
   curtas + limite de uso).
 
+## Multi-Família — em andamento (ordem combinada: 1 → 2 → 3, depois LGPD e cobrança)
+
+1. ✅ **Cadastro de conta** (2026-09-10) — signup, confirmação de email,
+   esqueci/redefinir senha. Testado end-to-end. **Falta**: criar uma conta
+   de verdade em resend.com e configurar `RESEND_API_KEY` + `EMAIL_FROM`
+   no Vercel — sem isso, emails de cadastro/reset em produção só ficam nos
+   logs do servidor (ninguém recebe de verdade). Também falta configurar
+   `APP_URL` em produção com o domínio real, senão os links do email
+   apontam pro localhost.
+2. ⬜ Abrir o sistema pra múltiplas famílias — na prática já funciona
+   (login/sessão nunca assumiram household único; só faltava o cadastro
+   do item 1 acima).
+3. ⬜ Reforçar isolamento entre famílias (Row-Level Security no Postgres,
+   como segunda camada além do filtro por household_id em cada query).
+4. ⬜ LGPD (ver seção acima).
+5. ⬜ Cobrança — depende de decisão de negócio (preço/plano) antes de
+   integrar qualquer serviço.
+
 ## Roteiro
 
-- Multi-Família entra **antes** da Etapa 5 (decisão já tomada).
 - `sondar-etapas-implementacao.md` ainda precisa ser reenviado pra
   confirmar o escopo exato da Etapa 5 em diante.
