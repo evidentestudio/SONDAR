@@ -113,7 +113,7 @@ export function InstallmentForecast({
                             <td key={m} className="money whitespace-nowrap px-3 py-2 text-right">
                               {cell ? (
                                 <span className={cell.isReal ? "text-ink" : "italic text-muted"}>
-                                  {formatBRL(cell.amount)}
+                                  {cell.installmentNumber}/{plan.totalInstallments}-{formatBRL(cell.amount)}
                                 </span>
                               ) : (
                                 <span className="text-border-strong">—</span>
