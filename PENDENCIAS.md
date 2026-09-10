@@ -57,11 +57,21 @@ o gatilho de quando revisitar.
    domínio próprio em resend.com/domains e trocar o `EMAIL_FROM` pra usar
    esse domínio. **Gatilho: antes de abrir cadastro pra usuários reais
    (fora da equipe).**
-2. ⬜ Abrir o sistema pra múltiplas famílias — na prática já funciona
-   (login/sessão nunca assumiram household único; só faltava o cadastro
-   do item 1 acima).
-3. ⬜ Reforçar isolamento entre famílias (Row-Level Security no Postgres,
-   como segunda camada além do filtro por household_id em cada query).
+2. ✅ **Abrir o sistema pra múltiplas famílias** (2026-09-10) — na prática já
+   funcionava (login/sessão nunca assumiram household único; todo
+   household_id vem da sessão verificada no servidor, nunca do cliente).
+3. ✅ **Row-Level Security no Postgres** (2026-09-10) — segunda camada de
+   isolamento além do filtro por household_id em cada query: role restrito
+   `sondar_app` + política em toda tabela household-scoped (categorias,
+   orçamentos, formas de pagamento, parcelamentos, lançamentos, regras,
+   notas, ledgers, audit_log, ai_extraction_logs). Mesmo uma query futura
+   que esqueça o filtro não consegue ler/gravar dado de outra família — o
+   Postgres recusa. **Falta**: rodar o setup em produção — criar o role
+   `sondar_app` no console do Neon (comentário no topo de
+   `db/006_rls.sql`), configurar `DATABASE_URL_APP` no Vercel e rodar a
+   migração `db/006_rls.sql`. Sem isso a aplicação continua funcionando
+   normalmente (cai de volta no role antigo, sem a camada extra), só não
+   tem a proteção ainda.
 4. ⬜ LGPD (ver seção acima).
 5. ⬜ Cobrança — depende de decisão de negócio (preço/plano) antes de
    integrar qualquer serviço.
