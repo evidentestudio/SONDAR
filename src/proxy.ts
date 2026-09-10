@@ -5,7 +5,20 @@ import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 // session cookie — only its own "Authorization: Bearer $CRON_SECRET" header,
 // checked inside the route handler itself. Without this exemption the proxy
 // would redirect that request to /login before the route ever ran it.
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/cron/advance-installments"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+  "/api/auth/login",
+  "/api/auth/logout",
+  "/api/auth/signup",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
+  "/api/auth/verify-email",
+  "/api/cron/advance-installments",
+];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
