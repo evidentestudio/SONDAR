@@ -1,8 +1,9 @@
-import { describe, expect, it, afterAll } from "vitest";
+import { describe, expect, it, afterAll, vi } from "vitest";
 import { getPool } from "@/lib/db";
 import { createAccount, verifyEmail, requestPasswordReset, resetPassword } from "@/lib/auth/signup";
 import { createAuthToken, consumeAuthToken } from "@/lib/auth/tokens";
 import { authenticateWithPassword } from "@/lib/auth/authenticate";
+import * as emailModule from "@/lib/email/send";
 
 const pool = getPool();
 
@@ -54,6 +55,30 @@ describe("cadastro de conta (Multi-Família)", () => {
       // Já dá pra logar imediatamente — verificação de email não bloqueia login.
       const session = await authenticateWithPassword(email, "senha-valida-123");
       expect(session?.userId).toBe(result.userId);
+    });
+
+    it("cria a conta mesmo se o envio do email de verificação falhar", async () => {
+      const email = "__signup_test_email_fails__@example.com";
+      cleanupEmails.push(email);
+
+      const sendEmailSpy = vi.spyOn(emailModule, "sendEmail").mockRejectedValueOnce(
+        new Error("Falha simulada de envio (ex: restrição de sandbox do Resend)"),
+      );
+      try {
+        const result = await createAccount({
+          householdName: "__cadastro_test__",
+          displayName: "Fulano",
+          email,
+          password: "senha-valida-123",
+        });
+        expect(result.status).toBe("created");
+        if (result.status !== "created") throw new Error("unreachable");
+
+        const session = await authenticateWithPassword(email, "senha-valida-123");
+        expect(session?.userId).toBe(result.userId);
+      } finally {
+        sendEmailSpy.mockRestore();
+      }
     });
 
     it("recusa email já cadastrado", async () => {

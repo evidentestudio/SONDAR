@@ -63,11 +63,18 @@ export async function createAccount(input: CreateAccountInput): Promise<CreateAc
 
   const token = await createAuthToken(userId, "verify_email");
   const link = `${appUrl()}/verify-email?token=${token}`;
-  await sendEmail({
-    to: email,
-    subject: "Confirme seu email — Sondar",
-    html: `<p>Olá, ${displayName}!</p><p>Confirme seu email pra ativar sua conta no Sondar:</p><p><a href="${link}">${link}</a></p><p>Esse link expira em 48 horas.</p>`,
-  });
+  // A conta já existe e login não depende de email verificado — uma falha
+  // no envio (provedor fora do ar, restrição de sandbox, etc.) não pode
+  // derrubar um cadastro que já foi concluído com sucesso no banco.
+  try {
+    await sendEmail({
+      to: email,
+      subject: "Confirme seu email — Sondar",
+      html: `<p>Olá, ${displayName}!</p><p>Confirme seu email pra ativar sua conta no Sondar:</p><p><a href="${link}">${link}</a></p><p>Esse link expira em 48 horas.</p>`,
+    });
+  } catch (err) {
+    console.error("Falha ao enviar email de verificação:", err);
+  }
 
   return { status: "created", userId, householdId };
 }
@@ -100,11 +107,15 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
   const token = await createAuthToken(user.id, "reset_password");
   const link = `${appUrl()}/reset-password?token=${token}`;
-  await sendEmail({
-    to: normalizedEmail,
-    subject: "Redefinir senha — Sondar",
-    html: `<p>Olá${user.display_name ? `, ${user.display_name}` : ""}!</p><p>Clique pra escolher uma nova senha:</p><p><a href="${link}">${link}</a></p><p>Esse link expira em 1 hora. Se você não pediu isso, ignore este email.</p>`,
-  });
+  try {
+    await sendEmail({
+      to: normalizedEmail,
+      subject: "Redefinir senha — Sondar",
+      html: `<p>Olá${user.display_name ? `, ${user.display_name}` : ""}!</p><p>Clique pra escolher uma nova senha:</p><p><a href="${link}">${link}</a></p><p>Esse link expira em 1 hora. Se você não pediu isso, ignore este email.</p>`,
+    });
+  } catch (err) {
+    console.error("Falha ao enviar email de redefinição de senha:", err);
+  }
 }
 
 export type ResetPasswordResult = { status: "reset" } | { status: "error"; message: string };
