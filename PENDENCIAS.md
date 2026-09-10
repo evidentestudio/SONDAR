@@ -66,11 +66,11 @@ o gatilho de quando revisitar.
    orçamentos, formas de pagamento, parcelamentos, lançamentos, regras,
    notas, ledgers, audit_log, ai_extraction_logs). Mesmo uma query futura
    que esqueça o filtro não consegue ler/gravar dado de outra família — o
-   Postgres recusa. **Falta**: rodar o setup em produção — criar o role
-   `sondar_app` no console do Neon (comentário no topo de
-   `db/006_rls.sql`), configurar `DATABASE_URL_APP` no Vercel e rodar a
-   migração `db/006_rls.sql`. Sem isso a aplicação continua funcionando
-   normalmente (cai de volta no role antigo, sem a camada extra), só não
+   Postgres recusa. Setup em produção concluído: role `sondar_app` criado
+   no Neon, `DATABASE_URL_APP` configurada no Vercel (Production/Preview/
+   Development), migração `db/006_rls.sql` aplicada e registrada em
+   `_sondar_migrations` (junto com 004 e 005, que também estavam
+   faltando no registro).
    tem a proteção ainda.
 4. ⬜ LGPD (ver seção acima).
 5. ⬜ Cobrança — depende de decisão de negócio (preço/plano) antes de
