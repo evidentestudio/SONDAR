@@ -147,3 +147,21 @@ o gatilho de quando revisitar.
      depois com dado real é caro).
   Princípio que atravessa tudo: **o sistema nunca decide sozinho em caso de
   dúvida** — incerto vai pra "revisar", nunca é lançado silenciosamente.
+  - **Status de implementação ("Etapa Multimodal", sequenciada por
+    decisão do usuário em 2026-09):**
+    1. ✅ Fundação de dados (schema: `amount_confidence`,
+       `ai_extraction_logs.ledger_id`/`period_start`/`period_end`,
+       `merchant_rules.rule_type`) — `db/008_multimodal_foundation.sql`.
+    2. ✅ Áudio como rascunho — botão "🎤 Falar" (só mobile), dita no
+       teclado, sempre passa pela revisão normal antes de salvar.
+    3. ✅ Apelido falado no dicionário — `rule_type` isola apelido falado
+       de padrão de fatura (nunca colidem), invisível na UI (continua
+       "Salvar regra" pros dois casos, por decisão do usuário).
+    4. ✅ Custo e volume — teto de 300 extrações/mês por household
+       (`src/lib/ai/limits.ts`, checado em `/api/ai/extract` antes de
+       qualquer chamada de IA); pré-checagem barata com Haiku
+       (`precheckImage` em `src/lib/ai/extract.ts`) recusa imagem
+       ilegível ou sem lançamento antes de rodar a extração cara (Opus).
+    5. ⬜ Deduplicação e conciliação real — não iniciada.
+    6. ⬜ Lacunas de registro (dinheiro/Pix) — não iniciada.
+    7. ⬜ Revisão em lote — não iniciada.

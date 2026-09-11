@@ -5,9 +5,10 @@ import { listLeafCategories } from "@/lib/categories/service";
 import { listMerchantRules } from "@/lib/merchant-rules/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 import { buildExtractionPrompt, buildAudioExtractionPrompt } from "@/lib/ai/prompt";
-import { extractFromImages, extractFromText } from "@/lib/ai/extract";
+import { extractFromImages, extractFromText, precheckImage } from "@/lib/ai/extract";
 import { processExtractedItems } from "@/lib/ai/pipeline";
 import { logExtraction } from "@/lib/ai/logs";
+import { hasReachedMonthlyExtractionCap, MAX_EXTRACTIONS_PER_MONTH } from "@/lib/ai/limits";
 
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -26,6 +27,17 @@ export async function POST(request: Request) {
           : null;
   if (!sourceType) {
     return NextResponse.json({ error: "sourceType precisa ser 'image', 'text' ou 'audio'." }, { status: 400 });
+  }
+
+  // Teto de segurança por período (sondar-melhorias-multimodal.md seção 2) —
+  // checado antes de qualquer chamada de IA, pra nunca gerar custo além dele.
+  if (await hasReachedMonthlyExtractionCap(session.householdId)) {
+    return NextResponse.json(
+      {
+        error: `Limite de ${MAX_EXTRACTIONS_PER_MONTH} processamentos por IA neste mês foi atingido. O limite é renovado no início do próximo mês.`,
+      },
+      { status: 429 },
+    );
   }
 
   // The whole batch resolves against one ledger (default "Principal") —
@@ -70,6 +82,10 @@ export async function POST(request: Request) {
           if (!ALLOWED_IMAGE_TYPES.has(img?.mediaType)) {
             return NextResponse.json({ error: "Tipo de imagem não suportado." }, { status: 400 });
           }
+        }
+        const precheck = await precheckImage(images);
+        if (!precheck.ok) {
+          return NextResponse.json({ error: precheck.reason }, { status: 400 });
         }
         rawItems = await extractFromImages(images, prompt);
       } else {
