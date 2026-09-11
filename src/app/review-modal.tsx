@@ -64,6 +64,15 @@ export function ReviewModal({
 }) {
   const [sourceType, setSourceType] = useState<SourceType>(initialSourceType ?? "image");
   const audioTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // Mesma detecção do botão "Falar" em month-view.tsx — "Tirar foto" só faz
+  // sentido no celular (capture="environment" é ignorado por navegador de
+  // computador, que não tem câmera integrada do mesmo jeito).
+  const [isMobileDevice, setIsMobileDevice] = useState(true);
+  useEffect(() => {
+    Promise.resolve().then(() => {
+      setIsMobileDevice(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+    });
+  }, []);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [text, setText] = useState("");
   const [audioText, setAudioText] = useState("");
@@ -90,6 +99,7 @@ export function ReviewModal({
     saving: boolean;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Foca o campo assim que a aba de áudio abre, pra chegar o mais perto
   // possível de "1 toque no botão Falar -> teclado já pronto pra ditar".
@@ -398,21 +408,42 @@ export function ReviewModal({
                   <p className="text-sm text-muted">
                     Arraste a imagem da fatura aqui, cole (Ctrl+V) ou escolha um arquivo.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
-                  >
-                    Escolher arquivo
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    hidden
-                    onChange={(e) => e.target.files && addFiles(e.target.files)}
-                  />
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {isMobileDevice && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
+                        >
+                          📷 Tirar foto
+                        </button>
+                        <input
+                          ref={cameraInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          hidden
+                          onChange={(e) => e.target.files && addFiles(e.target.files)}
+                        />
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+                    >
+                      {isMobileDevice ? "Escolher da galeria" : "Escolher arquivo"}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      onChange={(e) => e.target.files && addFiles(e.target.files)}
+                    />
+                  </div>
                   {images.length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {images.map((img, i) => (
