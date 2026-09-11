@@ -82,7 +82,6 @@ o gatilho de quando revisitar.
    Development), migração `db/006_rls.sql` aplicada e registrada em
    `_sondar_migrations` (junto com 004 e 005, que também estavam
    faltando no registro).
-   tem a proteção ainda.
 4. 🟡 LGPD — em andamento (ver seção "Segurança / LGPD" acima): consentimento
    e política de privacidade concluídos; exportar/excluir dados e trilha de
    auditoria ainda pendentes.
@@ -93,3 +92,38 @@ o gatilho de quando revisitar.
 
 - `sondar-etapas-implementacao.md` ainda precisa ser reenviado pra
   confirmar o escopo exato da Etapa 5 em diante.
+- `sondar-melhorias-multimodal.md` (2026-09-11) — complemento ao roteiro
+  acima, ainda não encaixado por prioridade (decisão do usuário, não
+  decidida ainda). Resumo de cada seção, pra não perder de vista:
+  1. **Ingestão multimodal** — áudio nunca vira lançamento direto, sempre
+     rascunho pendente de confirmação; campos novos por lançamento
+     (`origem`, `confianca_valor`, `periodo_coberto`); transcrição de áudio
+     no próprio celular antes de mandar pra IA; apelido falado ("mercado")
+     tratado como chave própria no dicionário de comerciantes, não
+     casamento direto com string de fatura.
+  2. **Deduplicação e conciliação** — pessoa sempre confirma fusão de
+     lançamentos parecidos; só alerta quando as origens são diferentes;
+     print que repete período já importado gera uma pergunta agregada, não
+     N perguntas; fatura/extrato é sempre a verdade, áudio é sempre
+     estimativa (janela ±3 dias, valor ±20%, mesma forma de pagamento);
+     chave determinística de duplicata pra mesma origem estruturada.
+  3. **Lacunas de registro (dinheiro/Pix)** — sem reconciliação de saldo de
+     carteira (descartado). Aviso de queda de lançamentos manuais numa
+     categoria + lembrete de recorrente que sumiu, sempre sem sugerir
+     valor. Exige 3 meses do mesmo padrão, dispara 1x/mês agregado, com
+     opção obrigatória de silenciar por categoria.
+  4. **Custo e volume** — teto de extrações por período por usuário,
+     pré-checagem barata antes de chamar a IA (imagem ilegível/sem
+     transação é recusada antes de custar), recalcular o teto de preço.
+  5. **Revisão em lote** — lista com edição rápida + aplicar regra de
+     comerciante direto da tela de revisão.
+  6. **Backlog pós-lançamento**: recorrentes automáticos (aluguel/
+     assinaturas), saldo previsto até fim do mês, exportação CSV/PDF,
+     alerta de estouro de categoria.
+  7. **Fora de escopo (decidido)**: sem Open Finance/conexão bancária —
+     argumento de venda é controle sobre a descrição do gasto, não
+     segurança. "Reset financeiro" adiado (não cancelado) — se entrar,
+     precisa de `user_id`/escopo de acesso desde já no schema (retrofit
+     depois com dado real é caro).
+  Princípio que atravessa tudo: **o sistema nunca decide sozinho em caso de
+  dúvida** — incerto vai pra "revisar", nunca é lançado silenciosamente.
