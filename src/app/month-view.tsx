@@ -437,13 +437,6 @@ function LedgerPanel({
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-serif text-lg text-ink">Lançamentos</h3>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setEntriesCollapsed((v) => !v)}
-              className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-ink-soft"
-            >
-              {entriesCollapsed ? "▼ expandir" : "▲ recolher"}
-            </button>
             {showEntryControls && (
               <>
                 <button
@@ -454,7 +447,7 @@ function LedgerPanel({
                   }}
                   className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
                 >
-                  Processar fatura
+                  Enviar imagem
                 </button>
                 <button
                   type="button"
@@ -474,10 +467,17 @@ function LedgerPanel({
                   }}
                   className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
                 >
-                  + Novo lançamento
+                  +NOVO
                 </button>
               </>
             )}
+            <button
+              type="button"
+              onClick={() => setEntriesCollapsed((v) => !v)}
+              className="text-sm text-muted"
+            >
+              {entriesCollapsed ? "▼ expandir" : "▲ recolher"}
+            </button>
           </div>
         </div>
 
