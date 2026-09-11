@@ -369,13 +369,10 @@ export function ReviewModal({
             <div className="flex flex-col gap-4">
               {sourceType === "audio" ? (
                 <div className="flex flex-col gap-3">
-                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
-                    <li>Toque no campo de texto logo abaixo pra abrir o teclado do seu celular.</li>
-                    <li>
-                      No teclado que abrir, toque no ícone de microfone (é do teclado, não desta tela) e
-                      dite o gasto — ex: &ldquo;gastei uns quarenta no mercado hoje no cartão&rdquo;.
-                    </li>
-                  </ol>
+                  <p className="text-sm text-muted">
+                    Toque no campo abaixo e dite o gasto — ex: &ldquo;gastei uns quarenta no mercado
+                    hoje no cartão&rdquo;.
+                  </p>
                   <textarea
                     ref={audioTextareaRef}
                     value={audioText}
@@ -384,32 +381,6 @@ export function ReviewModal({
                     rows={4}
                     className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
                   />
-                  <div className="relative self-center rounded-lg border border-dashed border-border-strong bg-paper px-4 pb-2 pt-5 opacity-80">
-                    <span className="absolute left-2 top-1 rounded bg-border-strong px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-                      exemplo ilustrativo — não é desta tela
-                    </span>
-                    <svg
-                      viewBox="0 0 320 80"
-                      role="img"
-                      aria-label="Exemplo ilustrativo: teclado de celular com o ícone de microfone perto da barra de espaço — não é parte funcional desta tela"
-                      className="w-full max-w-xs"
-                    >
-                      <rect x="4" y="14" width="312" height="58" rx="10" fill="var(--color-border)" opacity="0.5" />
-                      <rect x="16" y="26" width="216" height="34" rx="8" fill="var(--color-card)" stroke="var(--color-border-strong)" />
-                      <text x="124" y="48" textAnchor="middle" fontSize="12" fill="var(--color-muted)">
-                        barra de espaço
-                      </text>
-                      <circle cx="272" cy="43" r="20" fill="var(--color-muted)" />
-                      <path
-                        d="M272 34a5 5 0 0 1 5 5v6a5 5 0 0 1-10 0v-6a5 5 0 0 1 5-5Z M264 45a1.2 1.2 0 0 1 2.4 0 5.6 5.6 0 0 0 11.2 0 1.2 1.2 0 0 1 2.4 0 8 8 0 0 1-6.8 7.9v3.3h3a1.2 1.2 0 0 1 0 2.4h-8.4a1.2 1.2 0 0 1 0-2.4h3v-3.3A8 8 0 0 1 264 45Z"
-                        fill="var(--color-card)"
-                      />
-                    </svg>
-                    <p className="mt-1 text-center text-[11px] text-muted">
-                      Referência de onde o ícone costuma ficar — no seu teclado a posição varia (iPhone:
-                      perto do espaço/&ldquo;retornar&rdquo;; Android/Gboard: perto do emoji).
-                    </p>
-                  </div>
                 </div>
               ) : sourceType === "image" ? (
                 <div
