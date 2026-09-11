@@ -189,6 +189,7 @@ function LedgerPanel({
   const [reviewInitialSourceType, setReviewInitialSourceType] = useState<"image" | "text" | "audio">(
     "image",
   );
+  const [reviewInitialAction, setReviewInitialAction] = useState<"camera" | undefined>(undefined);
   // "Falar" depende do microfone do teclado virtual do celular — não existe
   // equivalente em navegador de computador. Detecção por user-agent nunca é
   // 100% infalível, mas é o padrão pra essa distinção; começa como true
@@ -449,63 +450,77 @@ function LedgerPanel({
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="font-serif text-lg text-ink">Lançamentos</h3>
-          <div className="flex items-center gap-2">
-            {showEntryControls && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddEntry((v) => !v);
-                    setEntriesCollapsed(false);
-                  }}
-                  className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
-                >
-                  +NOVO
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReviewInitialSourceType("image");
-                    setShowReview(true);
-                  }}
-                  className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
-                >
-                  Enviar imagem
-                </button>
-                <button
-                  type="button"
-                  disabled={!isMobileDevice}
-                  title={
-                    isMobileDevice
-                      ? undefined
-                      : "Disponível só no celular — usa o microfone do teclado, que o computador não tem"
-                  }
-                  onClick={() => {
-                    setReviewInitialSourceType("audio");
-                    setShowReview(true);
-                  }}
-                  className={`min-h-11 rounded-lg border border-border-strong px-4 text-sm ${
-                    isMobileDevice ? "text-accent-dark" : "cursor-not-allowed text-muted opacity-60"
-                  }`}
-                >
-                  🎤 Falar
-                </button>
-                {!isMobileDevice && (
-                  <span className="text-xs text-muted">(só no celular)</span>
-                )}
-              </>
-            )}
+          <button
+            type="button"
+            onClick={() => setEntriesCollapsed((v) => !v)}
+            className="text-sm text-muted"
+          >
+            {entriesCollapsed ? "▼ expandir" : "▲ recolher"}
+          </button>
+        </div>
+
+        {showEntryControls && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setEntriesCollapsed((v) => !v)}
-              className="text-sm text-muted"
+              onClick={() => {
+                setShowAddEntry((v) => !v);
+                setEntriesCollapsed(false);
+              }}
+              className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
             >
-              {entriesCollapsed ? "▼ expandir" : "▲ recolher"}
+              +NOVO
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setReviewInitialSourceType("image");
+                setReviewInitialAction(undefined);
+                setShowReview(true);
+              }}
+              className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+            >
+              🖼️ Imagem
+            </button>
+            <button
+              type="button"
+              disabled={!isMobileDevice}
+              title={isMobileDevice ? undefined : "Disponível só no celular — o computador não tem câmera integrada do mesmo jeito"}
+              onClick={() => {
+                setReviewInitialSourceType("image");
+                setReviewInitialAction("camera");
+                setShowReview(true);
+              }}
+              className={`min-h-11 rounded-lg border border-border-strong px-4 text-sm ${
+                isMobileDevice ? "text-accent-dark" : "cursor-not-allowed text-muted opacity-60"
+              }`}
+            >
+              📷 Foto
+            </button>
+            <button
+              type="button"
+              disabled={!isMobileDevice}
+              title={
+                isMobileDevice
+                  ? undefined
+                  : "Disponível só no celular — usa o microfone do teclado, que o computador não tem"
+              }
+              onClick={() => {
+                setReviewInitialSourceType("audio");
+                setReviewInitialAction(undefined);
+                setShowReview(true);
+              }}
+              className={`min-h-11 rounded-lg border border-border-strong px-4 text-sm ${
+                isMobileDevice ? "text-accent-dark" : "cursor-not-allowed text-muted opacity-60"
+              }`}
+            >
+              🎤 Falar
+            </button>
+            {!isMobileDevice && <span className="text-xs text-muted">(foto e falar: só no celular)</span>}
           </div>
-        </div>
+        )}
 
         {!entriesCollapsed && (
           <>
@@ -864,6 +879,7 @@ function LedgerPanel({
           defaultLedgerId={ledgerId}
           paymentSources={paymentSources}
           initialSourceType={reviewInitialSourceType}
+          initialAction={reviewInitialAction}
           onClose={() => setShowReview(false)}
           onSaved={() => {
             loadSummary(month);

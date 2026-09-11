@@ -49,16 +49,20 @@ export function ReviewModal({
   defaultLedgerId,
   paymentSources,
   initialSourceType,
+  initialAction,
   onClose,
   onSaved,
 }: {
   ledgers: LedgerRow[];
   defaultLedgerId: string;
   paymentSources: PaymentSourceRow[];
-  /** Abre o modal já na aba certa — usado pelo botão "🎤 Falar" de primeiro
-   * nível (ao lado de "Processar fatura"/"Novo lançamento"), pra não
-   * obrigar a pessoa a escolher a origem antes de poder ditar. */
+  /** Abre o modal já na aba certa — usado pelos botões de primeiro nível
+   * ("🎤 Falar", "📷 Foto", "🖼️ Imagem"), pra não obrigar a pessoa a
+   * escolher a origem antes de poder usar a que já clicou. */
   initialSourceType?: SourceType;
+  /** Só "camera" por enquanto — abre a câmera direto ao montar (usado pelo
+   * botão "📷 Foto"), em vez de mostrar a tela de escolha imagem/galeria. */
+  initialAction?: "camera";
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -100,6 +104,19 @@ export function ReviewModal({
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+
+  // Abre a câmera assim que a tela monta, no mesmo gesto do clique em
+  // "📷 Foto" — mesma técnica do foco automático do campo de áudio logo
+  // abaixo (o efeito roda antes do próximo repaint, então ainda conta como
+  // resposta ao toque do usuário na maioria dos navegadores). Se o
+  // navegador recusar por algum motivo, a pessoa ainda vê os botões normais
+  // da tela de imagem — não trava, só perde o atalho de 1 toque.
+  useEffect(() => {
+    if (initialAction === "camera" && sourceType === "image" && !rows) {
+      Promise.resolve().then(() => cameraInputRef.current?.click());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Foca o campo assim que a aba de áudio abre, pra chegar o mais perto
   // possível de "1 toque no botão Falar -> teclado já pronto pra ditar".
