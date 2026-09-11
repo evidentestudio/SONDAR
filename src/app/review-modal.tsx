@@ -391,41 +391,33 @@ export function ReviewModal({
                     tela) pra ditar o gasto — ex: &ldquo;gastei uns quarenta no mercado hoje no
                     cartão&rdquo;.
                   </p>
-                  <svg
-                    viewBox="0 0 320 90"
-                    role="img"
-                    aria-label="Ilustração de um teclado de celular com o ícone de microfone destacado perto da barra de espaço"
-                    className="w-full max-w-xs self-center"
-                  >
-                    <rect x="4" y="24" width="312" height="58" rx="10" fill="var(--color-border)" opacity="0.5" />
-                    <rect x="16" y="36" width="216" height="34" rx="8" fill="var(--color-card)" stroke="var(--color-border-strong)" />
-                    <text x="124" y="58" textAnchor="middle" fontSize="12" fill="var(--color-muted)">
-                      barra de espaço
-                    </text>
-                    <circle cx="272" cy="53" r="20" fill="var(--color-accent)" />
-                    <path
-                      d="M272 44a5 5 0 0 1 5 5v6a5 5 0 0 1-10 0v-6a5 5 0 0 1 5-5Z M264 55a1.2 1.2 0 0 1 2.4 0 5.6 5.6 0 0 0 11.2 0 1.2 1.2 0 0 1 2.4 0 8 8 0 0 1-6.8 7.9v3.3h3a1.2 1.2 0 0 1 0 2.4h-8.4a1.2 1.2 0 0 1 0-2.4h3v-3.3A8 8 0 0 1 264 55Z"
-                      fill="white"
-                    />
-                    <path
-                      d="M256 20 L268 34"
-                      stroke="var(--color-accent-dark)"
-                      strokeWidth="2"
-                      markerEnd="url(#arrowhead)"
-                      fill="none"
-                    />
-                    <defs>
-                      <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="4" refY="3" orient="auto">
-                        <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-accent-dark)" />
-                      </marker>
-                    </defs>
-                    <text x="256" y="16" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--color-accent-dark)">
-                      toque aqui
-                    </text>
-                  </svg>
+                  <div className="relative self-center rounded-lg border border-dashed border-border-strong bg-paper px-4 pb-2 pt-5 opacity-80">
+                    <span className="absolute left-2 top-1 rounded bg-border-strong px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+                      exemplo ilustrativo
+                    </span>
+                    <svg
+                      viewBox="0 0 320 80"
+                      role="img"
+                      aria-label="Exemplo ilustrativo: teclado de celular com o ícone de microfone perto da barra de espaço — não é parte funcional desta tela"
+                      className="w-full max-w-xs"
+                    >
+                      <rect x="4" y="14" width="312" height="58" rx="10" fill="var(--color-border)" opacity="0.5" />
+                      <rect x="16" y="26" width="216" height="34" rx="8" fill="var(--color-card)" stroke="var(--color-border-strong)" />
+                      <text x="124" y="48" textAnchor="middle" fontSize="12" fill="var(--color-muted)">
+                        barra de espaço
+                      </text>
+                      <circle cx="272" cy="43" r="20" fill="var(--color-muted)" />
+                      <path
+                        d="M272 34a5 5 0 0 1 5 5v6a5 5 0 0 1-10 0v-6a5 5 0 0 1 5-5Z M264 45a1.2 1.2 0 0 1 2.4 0 5.6 5.6 0 0 0 11.2 0 1.2 1.2 0 0 1 2.4 0 8 8 0 0 1-6.8 7.9v3.3h3a1.2 1.2 0 0 1 0 2.4h-8.4a1.2 1.2 0 0 1 0-2.4h3v-3.3A8 8 0 0 1 264 45Z"
+                        fill="var(--color-card)"
+                      />
+                    </svg>
+                  </div>
                   <p className="text-center text-xs text-muted">
-                    A posição exata varia por aparelho — no iPhone costuma ficar perto do espaço ou do
-                    &ldquo;retornar&rdquo;; no Android (Gboard), perto do emoji.
+                    O desenho acima é só um exemplo de onde esse ícone costuma ficar — não é uma peça
+                    clicável desta tela. No seu teclado de verdade, a posição varia: no iPhone costuma
+                    ficar perto do espaço ou do &ldquo;retornar&rdquo;; no Android (Gboard), perto do
+                    emoji.
                   </p>
                   <textarea
                     ref={audioTextareaRef}
