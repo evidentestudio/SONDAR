@@ -495,6 +495,9 @@ function LedgerPanel({
               />
             )}
 
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+              Filtrar lançamentos
+            </p>
             <div className="mb-3 flex flex-wrap items-end gap-2">
               <label className="flex flex-col gap-0.5 text-xs text-muted">
                 Categoria
