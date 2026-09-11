@@ -20,6 +20,13 @@ export type RawExtractedItem = {
   revisar: boolean;
   installment_current?: number | null;
   installment_total?: number | null;
+  /** Só preenchido pela extração de áudio (buildAudioExtractionPrompt) —
+   * true quando a fala soou como estimativa ("uns quarenta"), nunca
+   * presente/relevante pra fatura (imagem/texto), que é sempre valor exato. */
+  approximate?: boolean | null;
+  /** Idem — forma de pagamento mencionada na fala (ex: "cartão", "pix"),
+   * resolvida contra as formas reais do household em processExtractedItems. */
+  payment_source_hint?: string | null;
 };
 
 /**

@@ -4,6 +4,7 @@ import {
   createPaymentSource,
   deletePaymentSource,
   listPaymentSources,
+  resolvePaymentSourceHint,
   setDefaultPaymentSource,
 } from "@/lib/payment-sources/service";
 
@@ -49,5 +50,20 @@ describe("formas de pagamento", () => {
     sources = await listPaymentSources(householdId);
     expect(sources.find((s) => s.id === a.source.id)?.is_default).toBe(false);
     expect(sources.find((s) => s.id === b.source.id)?.is_default).toBe(true);
+  });
+
+  describe("resolvePaymentSourceHint (extração de áudio)", () => {
+    it("resolve um termo falado contra o nome real, tolerando variação", async () => {
+      const cartao = await createPaymentSource(householdId, { name: "Cartão de Crédito" });
+      if (cartao.status !== "created") throw new Error("setup failed");
+
+      const resolved = await resolvePaymentSourceHint(householdId, "cartao");
+      expect(resolved?.id).toBe(cartao.source.id);
+    });
+
+    it("retorna null quando não reconhece o termo — nunca inventa forma nova", async () => {
+      const resolved = await resolvePaymentSourceHint(householdId, "criptomoeda");
+      expect(resolved).toBeNull();
+    });
   });
 });

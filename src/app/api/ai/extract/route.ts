@@ -4,7 +4,7 @@ import { getSession } from "@/lib/auth/current";
 import { listLeafCategories } from "@/lib/categories/service";
 import { listMerchantRules } from "@/lib/merchant-rules/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
-import { buildExtractionPrompt } from "@/lib/ai/prompt";
+import { buildExtractionPrompt, buildAudioExtractionPrompt } from "@/lib/ai/prompt";
 import { extractFromImages, extractFromText } from "@/lib/ai/extract";
 import { processExtractedItems } from "@/lib/ai/pipeline";
 import { logExtraction } from "@/lib/ai/logs";
@@ -16,9 +16,16 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const sourceType = body?.sourceType === "image" ? "image" : body?.sourceType === "text" ? "text" : null;
+  const sourceType =
+    body?.sourceType === "image"
+      ? "image"
+      : body?.sourceType === "text"
+        ? "text"
+        : body?.sourceType === "audio"
+          ? "audio"
+          : null;
   if (!sourceType) {
-    return NextResponse.json({ error: "sourceType precisa ser 'image' ou 'text'." }, { status: 400 });
+    return NextResponse.json({ error: "sourceType precisa ser 'image', 'text' ou 'audio'." }, { status: 400 });
   }
 
   // The whole batch resolves against one ledger (default "Principal") —
@@ -38,36 +45,50 @@ export async function POST(request: Request) {
     );
   }
 
-  const rules = (await listMerchantRules(session.householdId)).filter((r) => r.ledger_id === ledgerId);
-  const merchantRules = rules
-    .filter((r) => !r.is_ambiguous)
-    .map((r) => ({ pattern: r.pattern, category: r.category_name }));
-
   const now = new Date();
-  const prompt = buildExtractionPrompt({
-    leafCategoryNames,
-    merchantRules,
-    currentMonth: now.getUTCMonth() + 1,
-    currentYear: now.getUTCFullYear(),
-  });
 
   try {
     let rawItems;
-    if (sourceType === "image") {
-      const images = Array.isArray(body?.images) ? body.images : [];
-      if (images.length === 0) {
-        return NextResponse.json({ error: "Envie ao menos uma imagem." }, { status: 400 });
-      }
-      for (const img of images) {
-        if (!ALLOWED_IMAGE_TYPES.has(img?.mediaType)) {
-          return NextResponse.json({ error: "Tipo de imagem não suportado." }, { status: 400 });
+    if (sourceType === "image" || sourceType === "text") {
+      const rules = (await listMerchantRules(session.householdId)).filter((r) => r.ledger_id === ledgerId);
+      const merchantRules = rules
+        .filter((r) => !r.is_ambiguous)
+        .map((r) => ({ pattern: r.pattern, category: r.category_name }));
+      const prompt = buildExtractionPrompt({
+        leafCategoryNames,
+        merchantRules,
+        currentMonth: now.getUTCMonth() + 1,
+        currentYear: now.getUTCFullYear(),
+      });
+
+      if (sourceType === "image") {
+        const images = Array.isArray(body?.images) ? body.images : [];
+        if (images.length === 0) {
+          return NextResponse.json({ error: "Envie ao menos uma imagem." }, { status: 400 });
         }
+        for (const img of images) {
+          if (!ALLOWED_IMAGE_TYPES.has(img?.mediaType)) {
+            return NextResponse.json({ error: "Tipo de imagem não suportado." }, { status: 400 });
+          }
+        }
+        rawItems = await extractFromImages(images, prompt);
+      } else {
+        const text = typeof body?.text === "string" ? body.text.trim() : "";
+        if (!text) return NextResponse.json({ error: "Cole o texto da fatura." }, { status: 400 });
+        rawItems = await extractFromText(text, prompt);
       }
-      rawItems = await extractFromImages(images, prompt);
     } else {
+      // audio — transcrição já feita no dispositivo (section 1.3), só o
+      // texto chega aqui. Rascunho sempre passa pela revisão normal, nunca
+      // salva direto (section 1.1) — processExtractedItems/save-batch são
+      // os mesmos de imagem/texto, só o prompt e o input_method diferem.
       const text = typeof body?.text === "string" ? body.text.trim() : "";
-      if (!text) return NextResponse.json({ error: "Cole o texto da fatura." }, { status: 400 });
-      rawItems = await extractFromText(text, prompt);
+      if (!text) return NextResponse.json({ error: "Fale ou digite o que você gastou." }, { status: 400 });
+      const audioPrompt = buildAudioExtractionPrompt({
+        leafCategoryNames,
+        today: now.toISOString().slice(0, 10),
+      });
+      rawItems = await extractFromText(text, audioPrompt);
     }
 
     const items = await processExtractedItems(session.householdId, ledgerId, rawItems);

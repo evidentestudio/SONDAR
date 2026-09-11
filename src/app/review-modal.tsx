@@ -7,7 +7,7 @@ import type { CategoryNode } from "@/lib/categories/service";
 import { formatBRL, parseBRLAmount, toAmountInputValue } from "@/lib/format";
 import { fetchLedgerCategoryTree, flattenLeaves } from "@/lib/client/ledger-categories";
 
-type SourceType = "image" | "text";
+type SourceType = "image" | "text" | "audio";
 
 type UploadedImage = { data: string; mediaType: string; previewUrl: string };
 
@@ -27,6 +27,10 @@ type DraftRow = {
   installmentCurrent: number | null;
   installmentTotal: number | null;
   paymentSourceId: string;
+  /** Ver AmountConfidence em lib/entries/service.ts — true quando a IA (ou a
+   * própria pessoa, editável aqui) considera o valor uma estimativa, não
+   * exato. Sempre false pra imagem/texto colado, a menos que a pessoa marque. */
+  approximate: boolean;
   savingRule: boolean;
   /** categoryId a saved merchant rule targets for this row, or null if none
    * saved yet — compared against the row's current categoryId to know
@@ -56,6 +60,7 @@ export function ReviewModal({
   const [sourceType, setSourceType] = useState<SourceType>("image");
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [text, setText] = useState("");
+  const [audioText, setAudioText] = useState("");
   const [rows, setRows] = useState<DraftRow[] | null>(null);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -104,7 +109,7 @@ export function ReviewModal({
       const body =
         sourceType === "image"
           ? { sourceType, ledgerId: defaultLedgerId, images: images.map(({ data, mediaType }) => ({ data, mediaType })) }
-          : { sourceType, ledgerId: defaultLedgerId, text };
+          : { sourceType, ledgerId: defaultLedgerId, text: sourceType === "audio" ? audioText : text };
 
       const res = await fetch("/api/ai/extract", {
         method: "POST",
@@ -133,6 +138,8 @@ export function ReviewModal({
               matchedRuleId: string | null;
               installmentCurrent: number | null;
               installmentTotal: number | null;
+              approximate?: boolean;
+              paymentSourceId?: string | null;
             },
             index: number,
           ): DraftRow => ({
@@ -150,7 +157,11 @@ export function ReviewModal({
             matchedRuleId: item.matchedRuleId,
             installmentCurrent: item.installmentCurrent,
             installmentTotal: item.installmentTotal,
-            paymentSourceId: paymentSources.find((ps) => ps.is_default)?.id ?? "",
+            approximate: item.approximate === true,
+            // A IA já tenta reconhecer a forma de pagamento mencionada na
+            // fala (só áudio) — só cai no default do household quando ela
+            // não reconheceu nada.
+            paymentSourceId: item.paymentSourceId || paymentSources.find((ps) => ps.is_default)?.id || "",
             savingRule: false,
             ruleSavedForCategoryId: null,
           }),
@@ -288,6 +299,7 @@ export function ReviewModal({
             needsReview: r.needsReview,
             installmentCurrent: r.installmentTotal ? r.installmentCurrent : null,
             installmentTotal: r.installmentTotal,
+            approximate: r.approximate,
           })),
         }),
       });
@@ -343,9 +355,30 @@ export function ReviewModal({
                 >
                   Texto colado
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setSourceType("audio")}
+                  className={`min-h-11 rounded-lg px-4 text-sm ${sourceType === "audio" ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
+                >
+                  🎤 Falar
+                </button>
               </div>
 
-              {sourceType === "image" ? (
+              {sourceType === "audio" ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted">
+                    Toque no campo abaixo e use o microfone do teclado do seu celular pra ditar o gasto —
+                    ex: &ldquo;gastei uns quarenta no mercado hoje no cartão&rdquo;.
+                  </p>
+                  <textarea
+                    value={audioText}
+                    onChange={(e) => setAudioText(e.target.value)}
+                    placeholder="Toque aqui e dite, ou digite o que você gastou..."
+                    rows={4}
+                    className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
+                  />
+                </div>
+              ) : sourceType === "image" ? (
                 <div
                   onDrop={(e) => {
                     e.preventDefault();
@@ -406,7 +439,14 @@ export function ReviewModal({
 
               <button
                 type="button"
-                disabled={processing || (sourceType === "image" ? images.length === 0 : !text.trim())}
+                disabled={
+                  processing ||
+                  (sourceType === "image"
+                    ? images.length === 0
+                    : sourceType === "audio"
+                      ? !audioText.trim()
+                      : !text.trim())
+                }
                 onClick={processSource}
                 className="min-h-11 self-start rounded-lg bg-accent px-5 text-sm font-medium text-white disabled:opacity-50"
               >
@@ -449,6 +489,14 @@ export function ReviewModal({
                         Regra aplicada
                       </span>
                     )}
+                    <label className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft">
+                      <input
+                        type="checkbox"
+                        checked={row.approximate}
+                        onChange={(e) => updateRow(row.key, { approximate: e.target.checked })}
+                      />
+                      Valor aproximado
+                    </label>
                     {row.installmentTotal && (
                       <span className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft">
                         Parcela

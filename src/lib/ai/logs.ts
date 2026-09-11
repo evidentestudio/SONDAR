@@ -3,7 +3,7 @@ import { dbForHousehold } from "@/lib/db";
 export type LogExtractionInput = {
   householdId: string;
   ledgerId: string;
-  sourceType: "image" | "text";
+  sourceType: "image" | "text" | "audio";
   entriesCreated: number;
   flaggedCount: number;
   modelUsed: string;

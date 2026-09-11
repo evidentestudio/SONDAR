@@ -2,6 +2,7 @@ import type { RawExtractedItem } from "./extract";
 import { findCanonicalCategory, isLeafCategory } from "@/lib/categories/service";
 import { findMatchingRule } from "@/lib/merchant-rules/service";
 import { checkPossibleDuplicate } from "@/lib/entries/service";
+import { resolvePaymentSourceHint } from "@/lib/payment-sources/service";
 
 export type DraftEntry = {
   date: string;
@@ -18,6 +19,13 @@ export type DraftEntry = {
   matchedRuleId: string | null;
   installmentCurrent: number | null;
   installmentTotal: number | null;
+  /** true = valor falado como estimativa (ver AmountConfidence em
+   * entries/service.ts). Sempre false pra fatura (imagem/texto). */
+  approximate: boolean;
+  /** Resolvido a partir de payment_source_hint (só áudio) — null quando não
+   * mencionado ou não reconhecido; a pessoa escolhe na revisão nesse caso. */
+  paymentSourceId: string | null;
+  paymentSourceName: string | null;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -77,6 +85,10 @@ export async function processExtractedItems(
       ? await checkPossibleDuplicate(householdId, categoryId, raw.amount, raw.date)
       : false;
 
+    const paymentSource = raw.payment_source_hint
+      ? await resolvePaymentSourceHint(householdId, raw.payment_source_hint)
+      : null;
+
     results.push({
       date: raw.date,
       description: raw.description.trim(),
@@ -90,6 +102,9 @@ export async function processExtractedItems(
       matchedRuleId,
       installmentCurrent: raw.installment_current ?? null,
       installmentTotal: raw.installment_total ?? null,
+      approximate: raw.approximate === true,
+      paymentSourceId: paymentSource?.id ?? null,
+      paymentSourceName: paymentSource?.name ?? null,
     });
   }
 

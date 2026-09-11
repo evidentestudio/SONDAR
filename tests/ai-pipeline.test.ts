@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { getPool } from "@/lib/db";
 import { createCategory } from "@/lib/categories/service";
 import { createMerchantRule } from "@/lib/merchant-rules/service";
+import { createPaymentSource } from "@/lib/payment-sources/service";
 import { createEntry } from "@/lib/entries/service";
 import { processExtractedItems } from "@/lib/ai/pipeline";
 import { logExtraction } from "@/lib/ai/logs";
@@ -50,11 +51,41 @@ describe("processExtractedItems", () => {
   afterAll(async () => {
     await pool.query(`DELETE FROM ai_extraction_logs WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM payment_sources WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM merchant_rules WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
     await pool.end();
+  });
+
+  it("marca approximate e resolve payment_source_hint (extração de áudio)", async () => {
+    const cartao = await createPaymentSource(householdId, { name: "Cartão de Crédito" });
+    if (cartao.status !== "created") throw new Error("setup failed");
+
+    const [comEstimativa, semEstimativa, semHint] = await processExtractedItems(householdId, ledgerId, [
+      item({ description: "Mercado", approximate: true, payment_source_hint: "cartao" }),
+      item({ description: "Padaria", approximate: false, payment_source_hint: "cartao" }),
+      item({ description: "Farmácia" }),
+    ]);
+
+    expect(comEstimativa.approximate).toBe(true);
+    expect(comEstimativa.paymentSourceId).toBe(cartao.source.id);
+
+    expect(semEstimativa.approximate).toBe(false);
+    expect(semEstimativa.paymentSourceId).toBe(cartao.source.id);
+
+    // Sem approximate/payment_source_hint no item (como imagem/texto de
+    // fatura sempre é) — nunca deve quebrar nem inventar valor.
+    expect(semHint.approximate).toBe(false);
+    expect(semHint.paymentSourceId).toBeNull();
+  });
+
+  it("payment_source_hint não reconhecido vira null, sem travar a extração", async () => {
+    const [draft] = await processExtractedItems(householdId, ledgerId, [
+      item({ description: "Posto de Gasolina", payment_source_hint: "criptomoeda" }),
+    ]);
+    expect(draft.paymentSourceId).toBeNull();
   });
 
   it("logExtraction grava ledger_id e período coberto (fundação da dedup por imagem)", async () => {

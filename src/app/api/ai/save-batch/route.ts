@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createEntry, checkPossibleDuplicate } from "@/lib/entries/service";
-import type { InputMethod } from "@/lib/entries/service";
+import type { InputMethod, AmountConfidence } from "@/lib/entries/service";
 import { createInstallmentPlan } from "@/lib/installment-plans/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 
@@ -15,6 +15,7 @@ type BatchItem = {
   needsReview: boolean;
   installmentCurrent?: number | null;
   installmentTotal?: number | null;
+  approximate?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -22,7 +23,8 @@ export async function POST(request: Request) {
   if (!session) return NextResponse.json({ error: "Não autenticado." }, { status: 401 });
 
   const body = await request.json().catch(() => null);
-  const sourceType: InputMethod = body?.sourceType === "image" ? "ai_image" : "ai_text";
+  const sourceType: InputMethod =
+    body?.sourceType === "image" ? "ai_image" : body?.sourceType === "audio" ? "ai_audio" : "ai_text";
   const items: BatchItem[] = Array.isArray(body?.items) ? body.items : [];
 
   if (items.length === 0) {
@@ -72,6 +74,7 @@ export async function POST(request: Request) {
             createdBy: session.userId,
             inputMethod: sourceType,
             reviewStatus,
+            amountConfidence: (item.approximate ? "approximate" : "exact") as AmountConfidence,
           });
 
     if (result.status === "error") {

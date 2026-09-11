@@ -64,7 +64,7 @@ export async function listEntries(
   return rows;
 }
 
-export type InputMethod = "manual" | "ai_image" | "ai_text";
+export type InputMethod = "manual" | "ai_image" | "ai_text" | "ai_audio";
 export type ReviewStatus = "confirmed" | "needs_review" | "possible_duplicate";
 /** "exact": valor exato (fatura, print, digitado). "approximate": arredondado
  * pela própria pessoa ao falar (ex: "uns quarenta") — ver

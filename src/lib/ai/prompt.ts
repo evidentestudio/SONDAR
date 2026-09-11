@@ -36,3 +36,30 @@ Ignore completamente qualquer lançamento que apareça com o texto riscado (tach
 Responda APENAS com um array JSON válido, sem markdown, sem texto antes ou depois, neste formato exato:
 [{"date":"2026-08-05","description":"Nome do estabelecimento","amount":123.45,"category":"Categoria","revisar":false,"installment_current":null,"installment_total":null}]`;
 }
+
+/**
+ * Prompt separado pro áudio (ver sondar-melhorias-multimodal.md seção 1) —
+ * NÃO reaproveita buildExtractionPrompt acima porque a forma de entrada é
+ * completamente diferente: uma fala casual e curta sobre UMA compra
+ * (transcrita pelo próprio teclado do celular, section 1.3 — a IA só recebe
+ * o texto já transcrito, nunca o áudio), não uma tabela de fatura. Aplicar o
+ * prompt de fatura a uma frase falada ("gastei uns quarenta no mercado
+ * hoje") não faz sentido — não há parcelamento, texto riscado, nem
+ * várias linhas por lançamento.
+ */
+export function buildAudioExtractionPrompt(params: {
+  leafCategoryNames: string[];
+  today: string; // YYYY-MM-DD
+}): string {
+  return `Você vai extrair um ou mais lançamentos financeiros de uma fala transcrita pelo teclado do celular do usuário — texto curto, informal, em português brasileiro, sobre gastos do dia a dia (ex: "gastei uns quarenta reais no mercado hoje no cartão", "paguei 15 de uber ontem no pix").
+
+Para cada lançamento mencionado, retorne: data (formato YYYY-MM-DD) — hoje é ${params.today}; use essa data quando a fala não indicar outra ("hoje", sem menção de dia) e resolva menções relativas claras ("ontem", "anteontem", "sexta passada") a partir dela; nunca invente uma data se não houver como resolver, use ${params.today}. Descrição (o que foi comprado ou o nome do estabelecimento, limpo), valor (número positivo em reais, sem "R$", ponto decimal), categoria (escolha a mais apropriada dentre exatamente estas opções: ${params.leafCategoryNames.join(", ")}) e revisar (booleano — true quando a fala não deixar claro o tipo de gasto).
+
+Campo "approximate" (booleano): true quando a pessoa falou o valor de forma claramente arredondada/estimada (ex: "uns", "tipo", "mais ou menos", "uns quarenta e pouco"); false quando o valor foi dito com precisão (ex: "23,50", "quarenta reais exatos").
+
+Campo "payment_source_hint" (string ou null): se a fala mencionar claramente como foi pago (ex: "no cartão", "no pix", "em dinheiro", "na poupança"), retorne esse termo tal como falado; caso contrário null. Não invente — só preencha se houver menção explícita.
+
+Ignore trechos que não são gastos (saudações, hesitações, assuntos não financeiros).
+Responda APENAS com um array JSON válido, sem markdown, sem texto antes ou depois, neste formato exato:
+[{"date":"2026-09-11","description":"Mercado","amount":40,"category":"Alimentação","revisar":false,"approximate":true,"payment_source_hint":"cartão"}]`;
+}

@@ -1,4 +1,5 @@
 import { dbForHousehold } from "@/lib/db";
+import { normalizeStr, fuzzyMatch } from "@/lib/text/normalize";
 
 export type PaymentSourceRow = {
   id: string;
@@ -35,6 +36,24 @@ async function findCanonicalPaymentSource(
     [householdId, name],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Resolve um termo falado ("cartão", "pix") contra as formas de pagamento
+ * reais do household — usado pela extração de áudio (payment_source_hint),
+ * mesma técnica de fuzzy match já usada pra regras de estabelecimento.
+ * Nunca cria uma forma nova a partir de um palpite — só encontra ou retorna
+ * null (a pessoa escolhe manualmente na revisão nesse caso).
+ */
+export async function resolvePaymentSourceHint(
+  householdId: string,
+  hint: string,
+): Promise<PaymentSourceRow | null> {
+  const trimmed = hint.trim();
+  if (!trimmed) return null;
+  const normHint = normalizeStr(trimmed);
+  const sources = await listPaymentSources(householdId);
+  return sources.find((s) => fuzzyMatch(normalizeStr(s.name), normHint)) ?? null;
 }
 
 export type CreatePaymentSourceResult =
