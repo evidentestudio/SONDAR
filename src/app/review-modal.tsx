@@ -307,6 +307,9 @@ export function ReviewModal({
         ledgerId: ruleForm.ledgerId,
         categoryId: ruleForm.categoryId,
         isAmbiguous: ruleForm.isAmbiguous,
+        // Apelido falado (ex: "mercado") nunca compartilha pool com padrão
+        // de fatura — ver findMatchingRule em merchant-rules/service.ts.
+        ruleType: sourceType === "audio" ? "spoken_alias" : "invoice_pattern",
       }),
     });
     updateRow(ruleForm.rowKey, {
@@ -679,8 +682,12 @@ export function ReviewModal({
                       className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId
-                        ? "Regra salva ✓"
-                        : "Salvar regra"}
+                        ? sourceType === "audio"
+                          ? "Apelido salvo ✓"
+                          : "Regra salva ✓"
+                        : sourceType === "audio"
+                          ? "Lembrar esse apelido"
+                          : "Salvar regra"}
                     </button>
                     <button
                       type="button"

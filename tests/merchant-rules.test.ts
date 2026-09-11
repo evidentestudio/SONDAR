@@ -72,6 +72,37 @@ describe("regras de estabelecimento", () => {
     expect(aliasRule.rule.rule_type).toBe("spoken_alias");
   });
 
+  it("apelido falado e padrão de fatura nunca se misturam — cada um só casa no seu próprio pool", async () => {
+    // As duas regras já existem do teste anterior: "ifood-default-type"
+    // (invoice_pattern) e "mercado" (spoken_alias), ambas -> mercadoId.
+
+    // Pedindo o pool de fatura (default), a descrição "mercado" (só existe
+    // como apelido falado) não pode casar — senão uma fala qualquer
+    // contendo a palavra "mercado" colidiria com regras de fatura.
+    const asInvoice = await findMatchingRule(householdId, ledgerId, "mercado");
+    expect(asInvoice.type).toBe("none");
+
+    // Pedindo o pool de áudio, o padrão de fatura "ifood-default-type" (só
+    // existe como invoice_pattern) também não pode casar.
+    const asSpokenAlias = await findMatchingRule(
+      householdId,
+      ledgerId,
+      "IFOOD*Restaurante Bom Ltda",
+      "spoken_alias",
+    );
+    expect(asSpokenAlias.type).toBe("none");
+
+    // Mas cada um casa dentro do seu próprio pool.
+    const spokenMatch = await findMatchingRule(householdId, ledgerId, "mercado", "spoken_alias");
+    expect(spokenMatch).toEqual({
+      type: "matched",
+      categoryId: mercadoId,
+      categoryName: "MERCADO",
+      ruleId: expect.any(String),
+      pattern: "mercado",
+    });
+  });
+
   it("regra ambígua nunca aplica categoria sozinha — força revisão", async () => {
     await createMerchantRule(householdId, ledgerId, {
       pattern: "anthropic",

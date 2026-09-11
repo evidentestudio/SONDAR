@@ -1,6 +1,7 @@
 import type { RawExtractedItem } from "./extract";
 import { findCanonicalCategory, isLeafCategory } from "@/lib/categories/service";
 import { findMatchingRule } from "@/lib/merchant-rules/service";
+import type { MerchantRuleType } from "@/lib/merchant-rules/service";
 import { checkPossibleDuplicate } from "@/lib/entries/service";
 import { resolvePaymentSourceHint } from "@/lib/payment-sources/service";
 
@@ -46,7 +47,14 @@ export async function processExtractedItems(
   householdId: string,
   ledgerId: string,
   rawItems: RawExtractedItem[],
+  options?: {
+    /** 'spoken_alias' pra lotes vindos de áudio, 'invoice_pattern' (default)
+     * pra imagem/texto — nunca deixa uma fala casual como "mercado" casar
+     * contra um padrão de fatura, nem o contrário. */
+    ruleType?: MerchantRuleType;
+  },
 ): Promise<DraftEntry[]> {
+  const ruleType = options?.ruleType ?? "invoice_pattern";
   const results: DraftEntry[] = [];
 
   for (const raw of rawItems) {
@@ -60,7 +68,7 @@ export async function processExtractedItems(
     let categoryId: string | null = null;
     let categoryName = raw.category;
 
-    const ruleMatch = await findMatchingRule(householdId, ledgerId, raw.description);
+    const ruleMatch = await findMatchingRule(householdId, ledgerId, raw.description, ruleType);
 
     if (ruleMatch.type === "matched") {
       categoryId = ruleMatch.categoryId;

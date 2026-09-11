@@ -91,7 +91,9 @@ export async function POST(request: Request) {
       rawItems = await extractFromText(text, audioPrompt);
     }
 
-    const items = await processExtractedItems(session.householdId, ledgerId, rawItems);
+    const items = await processExtractedItems(session.householdId, ledgerId, rawItems, {
+      ruleType: sourceType === "audio" ? "spoken_alias" : "invoice_pattern",
+    });
     const flaggedCount = items.filter((i) => i.needsReview || i.possibleDuplicate).length;
     await logExtraction({
       householdId: session.householdId,

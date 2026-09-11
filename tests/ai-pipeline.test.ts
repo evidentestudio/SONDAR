@@ -146,6 +146,34 @@ describe("processExtractedItems", () => {
     expect(draft.matchedRuleId).not.toBeNull();
   });
 
+  it("apelido falado só se aplica quando a extração pede o pool de áudio", async () => {
+    await createMerchantRule(householdId, ledgerId, {
+      pattern: "mercado",
+      categoryId: mercadoId,
+      ruleType: "spoken_alias",
+    });
+
+    // Sem options (fatura/texto, default invoice_pattern) — o apelido
+    // "mercado" não pode ser confundido com um padrão de fatura; a
+    // categoria vem do palpite normal da IA, não da regra.
+    const [asInvoice] = await processExtractedItems(householdId, ledgerId, [
+      item({ description: "mercado", category: "Assinaturas" }),
+    ]);
+    expect(asInvoice.matchedRuleId).toBeNull();
+    expect(asInvoice.categoryId).toBe(assinaturasId);
+
+    // Pedindo o pool de áudio, a mesma fala "mercado" agora casa com o
+    // apelido salvo, ignorando o palpite da IA (regra é autoritativa).
+    const [asAudio] = await processExtractedItems(
+      householdId,
+      ledgerId,
+      [item({ description: "mercado", category: "Assinaturas" })],
+      { ruleType: "spoken_alias" },
+    );
+    expect(asAudio.matchedRuleId).not.toBeNull();
+    expect(asAudio.categoryId).toBe(mercadoId);
+  });
+
   it("regra ambígua força Aguardando Revisão independente do palpite da IA", async () => {
     await createMerchantRule(householdId, ledgerId, {
       pattern: "anthropic",

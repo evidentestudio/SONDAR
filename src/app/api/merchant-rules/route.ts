@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     pattern,
     categoryId,
     isAmbiguous: body?.isAmbiguous === true,
+    ruleType: body?.ruleType === "spoken_alias" ? "spoken_alias" : "invoice_pattern",
   });
 
   if (result.status === "error") {

@@ -172,13 +172,23 @@ export type MerchantRuleMatch =
  * doesn't apply here — ledgers don't influence each other, so a rule from
  * "Empresa" never silently categorizes something being processed into
  * "Principal".
+ *
+ * Also scoped to one rule_type (default 'invoice_pattern', matching every
+ * caller before audio existed): a spoken alias like "mercado" must never be
+ * fuzzy-matched against invoice text (it would collide with unrelated real
+ * merchant names), and an invoice pattern must never be matched against a
+ * casual spoken description either — the two pools never mix. See
+ * sondar-melhorias-multimodal.md 1.4.
  */
 export async function findMatchingRule(
   householdId: string,
   ledgerId: string,
   description: string,
+  ruleType: MerchantRuleType = "invoice_pattern",
 ): Promise<MerchantRuleMatch> {
-  const rules = (await listMerchantRules(householdId)).filter((r) => r.ledger_id === ledgerId);
+  const rules = (await listMerchantRules(householdId)).filter(
+    (r) => r.ledger_id === ledgerId && r.rule_type === ruleType,
+  );
   const normDesc = normalizeStr(description);
 
   for (const rule of rules) {
