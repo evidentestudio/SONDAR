@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
-import { createEntry, checkPossibleDuplicate } from "@/lib/entries/service";
-import type { InputMethod, AmountConfidence } from "@/lib/entries/service";
+import { createEntry, checkPossibleDuplicate, findReconciliationCandidate, reconcileEntry } from "@/lib/entries/service";
+import type { InputMethod, AmountConfidence, ReviewStatus } from "@/lib/entries/service";
 import { createInstallmentPlan } from "@/lib/installment-plans/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 
@@ -16,6 +16,10 @@ type BatchItem = {
   installmentCurrent?: number | null;
   installmentTotal?: number | null;
   approximate?: boolean;
+  /** true quando a pessoa optou explicitamente por manter os dois
+   * lançamentos separados em vez de fundir com um rascunho de áudio
+   * pendente (ver review-modal.tsx) — pula a conciliação pra esse item. */
+  skipReconciliation?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -39,11 +43,41 @@ export async function POST(request: Request) {
     // review screen lets the user move any individual row before saving.
     const ledgerId = await resolveLedgerId(session.householdId, item.ledgerId);
 
-    const reviewStatus = item.needsReview
+    let reviewStatus: ReviewStatus = item.needsReview
       ? "needs_review"
       : item.categoryId && (await checkPossibleDuplicate(session.householdId, item.categoryId, item.amount, item.date))
         ? "possible_duplicate"
         : "confirmed";
+
+    // Hierarquia de fontes (sondar-melhorias-multimodal.md seção 2.3): a
+    // fatura/texto é a verdade, o áudio é estimativa. Refeita aqui contra o
+    // estado real do banco no momento de salvar (o preview em pipeline.ts
+    // não é vinculante) — parcelamento nunca concilia, e a própria pessoa
+    // pode ter pedido pra manter os dois lançamentos separados.
+    const isInstallment = !!item.installmentTotal && item.installmentTotal > 1;
+    if (sourceType !== "ai_audio" && !isInstallment && !item.skipReconciliation) {
+      const reconciliation = await findReconciliationCandidate(session.householdId, ledgerId, {
+        entryDate: item.date,
+        amount: item.amount,
+        paymentSourceId: item.paymentSourceId ?? null,
+      });
+      if (reconciliation.type === "matched") {
+        const result = await reconcileEntry(session.householdId, reconciliation.entry.entryId, {
+          amount: item.amount,
+          entryDate: item.date,
+          inputMethod: sourceType,
+          reviewStatus,
+        });
+        if (result.status === "error") errors.push({ index, message: result.message });
+        else created += 1;
+        continue;
+      }
+      if (reconciliation.type === "ambiguous") {
+        // Mais de um rascunho de áudio parecido — nunca decide sozinho:
+        // entra como lançamento novo, mas sinalizado pra revisão manual.
+        reviewStatus = "needs_review";
+      }
+    }
 
     // Compras parceladas (identificadas pela IA, section 4 do prompt) viram
     // um installment_plans + a entrada da parcela atual, não um lançamento

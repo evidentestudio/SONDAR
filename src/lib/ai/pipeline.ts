@@ -2,7 +2,7 @@ import type { RawExtractedItem } from "./extract";
 import { findCanonicalCategory, isLeafCategory } from "@/lib/categories/service";
 import { findMatchingRule } from "@/lib/merchant-rules/service";
 import type { MerchantRuleType } from "@/lib/merchant-rules/service";
-import { checkPossibleDuplicate } from "@/lib/entries/service";
+import { checkPossibleDuplicate, findReconciliationCandidate } from "@/lib/entries/service";
 import { resolvePaymentSourceHint } from "@/lib/payment-sources/service";
 
 export type DraftEntry = {
@@ -27,6 +27,17 @@ export type DraftEntry = {
    * mencionado ou não reconhecido; a pessoa escolhe na revisão nesse caso. */
   paymentSourceId: string | null;
   paymentSourceName: string | null;
+  /** Preview da conciliação (sondar-melhorias-multimodal.md seção 2.3) — só
+   * calculado pra fatura/texto (nunca pra áudio, que é o lado "estimativa"
+   * da hierarquia). Não vinculante: save-batch refaz essa busca contra o
+   * estado real do banco no momento de salvar, então isso é só pra a tela
+   * de revisão avisar a pessoa do que vai acontecer. */
+  reconcileEntryId: string | null;
+  reconcileEntryDate: string | null;
+  reconcileEntryAmount: number | null;
+  /** true quando mais de um rascunho de áudio pendente bate com esse
+   * lançamento — ambíguo nunca funde sozinho, vai pra revisão. */
+  reconciliationAmbiguous: boolean;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -97,6 +108,29 @@ export async function processExtractedItems(
       ? await resolvePaymentSourceHint(householdId, raw.payment_source_hint)
       : null;
 
+    // Preview de conciliação (seção 2.3) — só faz sentido pro lado
+    // "fatura/texto é a verdade" da hierarquia, nunca pro áudio, que é o
+    // lado "estimativa" sendo procurado, não o buscador.
+    let reconcileEntryId: string | null = null;
+    let reconcileEntryDate: string | null = null;
+    let reconcileEntryAmount: number | null = null;
+    let reconciliationAmbiguous = false;
+    if (ruleType !== "spoken_alias") {
+      const reconciliation = await findReconciliationCandidate(householdId, ledgerId, {
+        entryDate: raw.date,
+        amount: raw.amount,
+        paymentSourceId: paymentSource?.id ?? null,
+      });
+      if (reconciliation.type === "matched") {
+        reconcileEntryId = reconciliation.entry.entryId;
+        reconcileEntryDate = reconciliation.entry.entryDate;
+        reconcileEntryAmount = reconciliation.entry.amount;
+      } else if (reconciliation.type === "ambiguous") {
+        reconciliationAmbiguous = true;
+        needsReview = true;
+      }
+    }
+
     results.push({
       date: raw.date,
       description: raw.description.trim(),
@@ -113,6 +147,10 @@ export async function processExtractedItems(
       approximate: raw.approximate === true,
       paymentSourceId: paymentSource?.id ?? null,
       paymentSourceName: paymentSource?.name ?? null,
+      reconcileEntryId,
+      reconcileEntryDate,
+      reconcileEntryAmount,
+      reconciliationAmbiguous,
     });
   }
 

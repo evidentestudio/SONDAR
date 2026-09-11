@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it, beforeAll, afterAll, afterEach } from "vitest";
 import { getPool } from "@/lib/db";
 import { createCategory } from "@/lib/categories/service";
 import { createMerchantRule } from "@/lib/merchant-rules/service";
@@ -48,9 +48,16 @@ describe("processExtractedItems", () => {
     assinaturasId = assinaturas.category.id;
   });
 
+  // Isola cada teste dos lançamentos criados por outros — sem isso, um
+  // rascunho de áudio (amount_confidence 'approximate') deixado por um
+  // teste de conciliação viraria candidato inesperado em outro teste que
+  // usa a mesma data/valor padrão do helper item().
+  afterEach(async () => {
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+  });
+
   afterAll(async () => {
     await pool.query(`DELETE FROM ai_extraction_logs WHERE household_id = $1`, [householdId]);
-    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM payment_sources WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM merchant_rules WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
@@ -172,6 +179,65 @@ describe("processExtractedItems", () => {
     );
     expect(asAudio.matchedRuleId).not.toBeNull();
     expect(asAudio.categoryId).toBe(mercadoId);
+  });
+
+  it("preview de conciliação: fatura/texto acha rascunho de áudio pendente sem forma de pagamento em comum", async () => {
+    const cartao = await createPaymentSource(householdId, { name: "Cartão Conciliação" });
+    if (cartao.status !== "created") throw new Error("setup failed");
+
+    const draft = await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-05",
+      description: "Mercado (falado)",
+      amount: 40,
+      categoryId: mercadoId,
+      paymentSourceId: cartao.source.id,
+      inputMethod: "ai_audio",
+      amountConfidence: "approximate",
+    });
+    if (draft.status !== "created") throw new Error("setup failed");
+
+    // Sourced from an invoice/text (default ruleType) — payment_source_hint
+    // só existe pra áudio, então o preview de fatura não tem
+    // paymentSourceId resolvido, e sem forma de pagamento em comum ele não
+    // pode confirmar o match (mesma forma de pagamento é obrigatória).
+    const [asInvoice] = await processExtractedItems(householdId, ledgerId, [
+      item({ date: "2026-09-06", description: "Supermercado XYZ", amount: 38, category: "Mercado" }),
+    ]);
+    expect(asInvoice.reconcileEntryId).toBeNull();
+
+    // Sourced from audio (ruleType spoken_alias) nunca procura conciliação —
+    // é o lado "estimativa" da hierarquia, não o buscador.
+    const [asAudio] = await processExtractedItems(
+      householdId,
+      ledgerId,
+      [item({ date: "2026-09-06", description: "Mercado", amount: 38, category: "Mercado" })],
+      { ruleType: "spoken_alias" },
+    );
+    expect(asAudio.reconcileEntryId).toBeNull();
+    expect(asAudio.reconciliationAmbiguous).toBe(false);
+  });
+
+  it("preview de conciliação: acha o candidato quando ambos os lados não têm forma de pagamento definida", async () => {
+    const draft = await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-08",
+      description: "Padaria (falado)",
+      amount: 20,
+      categoryId: mercadoId,
+      inputMethod: "ai_audio",
+      amountConfidence: "approximate",
+    });
+    if (draft.status !== "created") throw new Error("setup failed");
+
+    const [asInvoice] = await processExtractedItems(householdId, ledgerId, [
+      item({ date: "2026-09-09", description: "Padaria do Bairro", amount: 19, category: "Mercado" }),
+    ]);
+    expect(asInvoice.reconcileEntryId).toBe(draft.entry.id);
+    expect(asInvoice.reconcileEntryAmount).toBe(20);
+    expect(asInvoice.reconcileEntryDate).toBe("2026-09-08");
   });
 
   it("regra ambígua força Aguardando Revisão independente do palpite da IA", async () => {

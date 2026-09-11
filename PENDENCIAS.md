@@ -162,6 +162,23 @@ o gatilho de quando revisitar.
        qualquer chamada de IA); pré-checagem barata com Haiku
        (`precheckImage` em `src/lib/ai/extract.ts`) recusa imagem
        ilegível ou sem lançamento antes de rodar a extração cara (Opus).
-    5. ⬜ Deduplicação e conciliação real — não iniciada.
+    5. 🟡 Deduplicação e conciliação real — hierarquia de fontes (seção
+       2.3) implementada: quando chega um lançamento de fatura/texto, o
+       sistema procura um rascunho de áudio pendente (`amount_confidence
+       = 'approximate'`) com janela de ±3 dias, valor dentro de ±20% e
+       mesma forma de pagamento (`findReconciliationCandidate`/
+       `reconcileEntry` em `src/lib/entries/service.ts`); achou → funde
+       (substitui valor/data pelos da fatura, marca `exact`), mantendo
+       categoria e forma de pagamento já atribuídas; mais de um candidato
+       → nunca decide sozinho, cria como novo lançamento sinalizado pra
+       revisão. A pessoa vê o aviso na tela de revisão antes de salvar e
+       pode escolher "manter os dois separados". Escopo restante da seção
+       2, deliberadamente deixado pra depois (avisado ao usuário, não
+       cortado silenciosamente): 2.2 "print repetido = uma pergunta
+       agregada" (depende de calcular `period_start`/`period_end` na
+       extração de imagem, ainda não preenchido — ver sub-etapa 1) e 2.4
+       "chave determinística" mais estrita pra duplicata de mesma origem
+       estruturada (hoje ainda usa o `checkPossibleDuplicate` mais simples
+       de categoria+valor+mês da Etapa 3).
     6. ⬜ Lacunas de registro (dinheiro/Pix) — não iniciada.
     7. ⬜ Revisão em lote — não iniciada.

@@ -31,6 +31,16 @@ type DraftRow = {
    * própria pessoa, editável aqui) considera o valor uma estimativa, não
    * exato. Sempre false pra imagem/texto colado, a menos que a pessoa marque. */
   approximate: boolean;
+  /** Preview de conciliação com um rascunho de áudio pendente (ver
+   * DraftEntry em lib/ai/pipeline.ts) — null quando não há candidato.
+   * Não vinculante: save-batch decide de novo no momento de salvar. */
+  reconcileEntryId: string | null;
+  reconcileEntryDate: string | null;
+  reconcileEntryAmount: number | null;
+  reconciliationAmbiguous: boolean;
+  /** true = a pessoa pediu explicitamente pra manter os dois lançamentos
+   * separados em vez de fundir com o rascunho de áudio encontrado acima. */
+  skipReconciliation: boolean;
   savingRule: boolean;
   /** categoryId a saved merchant rule targets for this row, or null if none
    * saved yet — compared against the row's current categoryId to know
@@ -38,6 +48,11 @@ type DraftRow = {
    * (user picked a different category since). */
   ruleSavedForCategoryId: string | null;
 };
+
+function formatShortDate(isoDate: string): string {
+  const [, month, day] = isoDate.split("-");
+  return `${day}/${month}`;
+}
 
 function suggestPattern(description: string): string {
   const tokens = description.split(/[\s*]+/).filter((t) => t.length >= 3);
@@ -177,6 +192,10 @@ export function ReviewModal({
               installmentTotal: number | null;
               approximate?: boolean;
               paymentSourceId?: string | null;
+              reconcileEntryId?: string | null;
+              reconcileEntryDate?: string | null;
+              reconcileEntryAmount?: number | null;
+              reconciliationAmbiguous?: boolean;
             },
             index: number,
           ): DraftRow => ({
@@ -201,6 +220,11 @@ export function ReviewModal({
             paymentSourceId: item.paymentSourceId || paymentSources.find((ps) => ps.is_default)?.id || "",
             savingRule: false,
             ruleSavedForCategoryId: null,
+            reconcileEntryId: item.reconcileEntryId ?? null,
+            reconcileEntryDate: item.reconcileEntryDate ?? null,
+            reconcileEntryAmount: item.reconcileEntryAmount ?? null,
+            reconciliationAmbiguous: item.reconciliationAmbiguous === true,
+            skipReconciliation: false,
           }),
         ),
       );
@@ -340,6 +364,7 @@ export function ReviewModal({
             installmentCurrent: r.installmentTotal ? r.installmentCurrent : null,
             installmentTotal: r.installmentTotal,
             approximate: r.approximate,
+            skipReconciliation: r.skipReconciliation,
           })),
         }),
       });
@@ -540,6 +565,11 @@ export function ReviewModal({
                         Regra aplicada
                       </span>
                     )}
+                    {row.reconciliationAmbiguous && (
+                      <span className="rounded-full bg-accent-light px-3 py-1 text-xs text-accent-dark">
+                        Vários rascunhos de áudio parecidos — revisar manualmente
+                      </span>
+                    )}
                     <label className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft">
                       <input
                         type="checkbox"
@@ -571,6 +601,25 @@ export function ReviewModal({
                       </span>
                     )}
                   </div>
+
+                  {row.reconcileEntryId && (
+                    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-accent-light px-3 py-2 text-xs text-accent-dark">
+                      <span>
+                        🔄 Este lançamento já existia como rascunho de áudio (R${" "}
+                        {row.reconcileEntryAmount?.toFixed(2).replace(".", ",")} em{" "}
+                        {row.reconcileEntryDate && formatShortDate(row.reconcileEntryDate)}) — vai atualizar esse
+                        lançamento com o valor e a data exatos, em vez de criar um novo.
+                      </span>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={row.skipReconciliation}
+                          onChange={(e) => updateRow(row.key, { skipReconciliation: e.target.checked })}
+                        />
+                        Manter os dois separados
+                      </label>
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap gap-2">
                     <label className="flex flex-col gap-0.5 text-xs text-muted">

@@ -261,6 +261,87 @@ export async function deleteEntry(householdId: string, id: string): Promise<void
   );
 }
 
+export type ReconciliationCandidate = {
+  entryId: string;
+  categoryId: string | null;
+  paymentSourceId: string | null;
+  entryDate: string;
+  amount: number;
+};
+
+export type ReconciliationResult =
+  | { type: "matched"; entry: ReconciliationCandidate }
+  | { type: "ambiguous" }
+  | { type: "none" };
+
+/**
+ * Hierarquia de fontes (sondar-melhorias-multimodal.md seção 2.3): a
+ * fatura/extrato é sempre a verdade, o áudio é sempre estimativa. Quando
+ * chega um lançamento de fatura/texto, procura um rascunho de áudio
+ * pendente (amount_confidence = 'approximate') com janela de ±3 dias, valor
+ * dentro de ±20% e mesma forma de pagamento — candidato a fundir em vez de
+ * virar um lançamento novo e duplicado. Mais de um candidato é ambíguo
+ * (nunca decide sozinho): vai para revisão, nenhum dos dois é tocado aqui.
+ */
+export async function findReconciliationCandidate(
+  householdId: string,
+  ledgerId: string,
+  params: { entryDate: string; amount: number; paymentSourceId: string | null },
+): Promise<ReconciliationResult> {
+  const { rows } = await dbForHousehold<{
+    id: string;
+    category_id: string | null;
+    payment_source_id: string | null;
+    entry_date: string;
+    amount: string;
+  }>(
+    householdId,
+    `SELECT id, category_id, payment_source_id, entry_date, amount FROM financial_entries
+     WHERE household_id = $1 AND ledger_id = $2 AND deleted_at IS NULL
+       AND amount_confidence = 'approximate'
+       AND entry_date BETWEEN $3::date - INTERVAL '3 days' AND $3::date + INTERVAL '3 days'
+       AND amount BETWEEN $4 * 0.8 AND $4 * 1.2
+       AND payment_source_id IS NOT DISTINCT FROM $5`,
+    [householdId, ledgerId, params.entryDate, params.amount, params.paymentSourceId],
+  );
+  if (rows.length === 0) return { type: "none" };
+  if (rows.length > 1) return { type: "ambiguous" };
+  return {
+    type: "matched",
+    entry: {
+      entryId: rows[0].id,
+      categoryId: rows[0].category_id,
+      paymentSourceId: rows[0].payment_source_id,
+      entryDate: rows[0].entry_date,
+      amount: Number(rows[0].amount),
+    },
+  };
+}
+
+/**
+ * Executa a fusão decidida por findReconciliationCandidate: substitui valor
+ * e data pelos da fatura/texto (a verdade) e marca como conciliado
+ * (amount_confidence volta a 'exact') — mantém a categoria e a forma de
+ * pagamento já atribuídas ao rascunho de áudio, que a pessoa já confirmou.
+ */
+export async function reconcileEntry(
+  householdId: string,
+  entryId: string,
+  input: { amount: number; entryDate: string; inputMethod: InputMethod; reviewStatus: ReviewStatus },
+): Promise<CreateEntryResult> {
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
+    `UPDATE financial_entries
+       SET amount = $1, entry_date = $2, amount_confidence = 'exact',
+           input_method = $3, review_status = $4, updated_at = now()
+     WHERE id = $5 AND household_id = $6 AND deleted_at IS NULL
+     RETURNING id`,
+    [input.amount, input.entryDate, input.inputMethod, input.reviewStatus, entryId, householdId],
+  );
+  if (!rows[0]) return { status: "error", message: "Lançamento a conciliar não foi encontrado." };
+  return { status: "created", entry: { id: rows[0].id } };
+}
+
 /**
  * Per sondar-full-build-instructions.md section 3.6 — same category + amount
  * (within a cent) in the same month. Never blocks saving, only flags for the
