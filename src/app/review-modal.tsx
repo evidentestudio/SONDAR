@@ -423,7 +423,7 @@ export function ReviewModal({
                     ref={audioTextareaRef}
                     value={audioText}
                     onChange={(e) => setAudioText(e.target.value)}
-                    placeholder="Toque aqui e dite, ou digite o que você gastou..."
+                    placeholder="Use o microfone do teclado para ditar o seu gasto"
                     rows={4}
                     className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
                   />
