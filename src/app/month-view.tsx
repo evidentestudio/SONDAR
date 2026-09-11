@@ -186,6 +186,9 @@ function LedgerPanel({
   const [error, setError] = useState<string | null>(null);
   const [showAddEntry, setShowAddEntry] = useState(false);
   const [showReview, setShowReview] = useState(false);
+  const [reviewInitialSourceType, setReviewInitialSourceType] = useState<"image" | "text" | "audio">(
+    "image",
+  );
   const [editingBudget, setEditingBudget] = useState<{
     key: string;
     categoryId: string;
@@ -445,10 +448,23 @@ function LedgerPanel({
               <>
                 <button
                   type="button"
-                  onClick={() => setShowReview(true)}
+                  onClick={() => {
+                    setReviewInitialSourceType("image");
+                    setShowReview(true);
+                  }}
                   className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
                 >
                   Processar fatura
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewInitialSourceType("audio");
+                    setShowReview(true);
+                  }}
+                  className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+                >
+                  🎤 Falar
                 </button>
                 <button
                   type="button"
@@ -818,6 +834,7 @@ function LedgerPanel({
           ledgers={ledgers}
           defaultLedgerId={ledgerId}
           paymentSources={paymentSources}
+          initialSourceType={reviewInitialSourceType}
           onClose={() => setShowReview(false)}
           onSaved={() => {
             loadSummary(month);

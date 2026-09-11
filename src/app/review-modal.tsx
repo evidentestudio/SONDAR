@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
 import type { CategoryNode } from "@/lib/categories/service";
@@ -48,16 +48,22 @@ export function ReviewModal({
   ledgers,
   defaultLedgerId,
   paymentSources,
+  initialSourceType,
   onClose,
   onSaved,
 }: {
   ledgers: LedgerRow[];
   defaultLedgerId: string;
   paymentSources: PaymentSourceRow[];
+  /** Abre o modal já na aba certa — usado pelo botão "🎤 Falar" de primeiro
+   * nível (ao lado de "Processar fatura"/"Novo lançamento"), pra não
+   * obrigar a pessoa a escolher a origem antes de poder ditar. */
+  initialSourceType?: SourceType;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [sourceType, setSourceType] = useState<SourceType>("image");
+  const [sourceType, setSourceType] = useState<SourceType>(initialSourceType ?? "image");
+  const audioTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [text, setText] = useState("");
   const [audioText, setAudioText] = useState("");
@@ -84,6 +90,19 @@ export function ReviewModal({
     saving: boolean;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Foca o campo assim que a aba de áudio abre, pra chegar o mais perto
+  // possível de "1 toque no botão Falar -> teclado já pronto pra ditar".
+  // iOS só abre o teclado a partir de um gesto do usuário — como isto roda
+  // logo depois do clique que trocou a aba (ainda no mesmo ciclo, antes do
+  // próximo repaint), continua contando como gesto na maioria das versões.
+  // Se mesmo assim não abrir em algum aparelho, a pessoa ainda pode tocar
+  // no campo manualmente — nunca fica sem alternativa.
+  useEffect(() => {
+    if (sourceType === "audio" && !rows) {
+      audioTextareaRef.current?.focus();
+    }
+  }, [sourceType, rows]);
 
   function addFiles(files: FileList | File[]) {
     for (const file of Array.from(files)) {
@@ -371,6 +390,7 @@ export function ReviewModal({
                     ex: &ldquo;gastei uns quarenta no mercado hoje no cartão&rdquo;.
                   </p>
                   <textarea
+                    ref={audioTextareaRef}
                     value={audioText}
                     onChange={(e) => setAudioText(e.target.value)}
                     placeholder="Toque aqui e dite, ou digite o que você gastou..."
