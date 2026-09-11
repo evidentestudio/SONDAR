@@ -189,6 +189,21 @@ function LedgerPanel({
   const [reviewInitialSourceType, setReviewInitialSourceType] = useState<"image" | "text" | "audio">(
     "image",
   );
+  // "Falar" depende do microfone do teclado virtual do celular — não existe
+  // equivalente em navegador de computador. Detecção por user-agent nunca é
+  // 100% infalível, mas é o padrão pra essa distinção; começa como true
+  // (nunca desabilita à toa antes de detectar) e só desabilita depois de
+  // confirmar que não é celular.
+  const [isMobileDevice, setIsMobileDevice] = useState(true);
+  useEffect(() => {
+    // Promise.resolve().then(...) em vez de setState direto no corpo do
+    // effect — só existe navigator no cliente, então isso não dá pra
+    // calcular direto no useState (o servidor não tem navigator, ia
+    // divergir do cliente na primeira renderização).
+    Promise.resolve().then(() => {
+      setIsMobileDevice(/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+    });
+  }, []);
   const [editingBudget, setEditingBudget] = useState<{
     key: string;
     categoryId: string;
@@ -461,14 +476,25 @@ function LedgerPanel({
                 </button>
                 <button
                   type="button"
+                  disabled={!isMobileDevice}
+                  title={
+                    isMobileDevice
+                      ? undefined
+                      : "Disponível só no celular — usa o microfone do teclado, que o computador não tem"
+                  }
                   onClick={() => {
                     setReviewInitialSourceType("audio");
                     setShowReview(true);
                   }}
-                  className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+                  className={`min-h-11 rounded-lg border border-border-strong px-4 text-sm ${
+                    isMobileDevice ? "text-accent-dark" : "cursor-not-allowed text-muted opacity-60"
+                  }`}
                 >
                   🎤 Falar
                 </button>
+                {!isMobileDevice && (
+                  <span className="text-xs text-muted">(só no celular)</span>
+                )}
               </>
             )}
             <button
