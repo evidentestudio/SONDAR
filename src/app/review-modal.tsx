@@ -682,12 +682,8 @@ export function ReviewModal({
                       className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId
-                        ? sourceType === "audio"
-                          ? "Apelido salvo ✓"
-                          : "Regra salva ✓"
-                        : sourceType === "audio"
-                          ? "Lembrar esse apelido"
-                          : "Salvar regra"}
+                        ? "Regra salva ✓"
+                        : "Salvar regra"}
                     </button>
                     <button
                       type="button"
