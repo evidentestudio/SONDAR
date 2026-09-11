@@ -4,6 +4,7 @@ import { createCategory } from "@/lib/categories/service";
 import { createMerchantRule } from "@/lib/merchant-rules/service";
 import { createEntry } from "@/lib/entries/service";
 import { processExtractedItems } from "@/lib/ai/pipeline";
+import { logExtraction } from "@/lib/ai/logs";
 import type { RawExtractedItem } from "@/lib/ai/extract";
 
 const pool = getPool();
@@ -54,6 +55,32 @@ describe("processExtractedItems", () => {
     await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
     await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
     await pool.end();
+  });
+
+  it("logExtraction grava ledger_id e período coberto (fundação da dedup por imagem)", async () => {
+    await logExtraction({
+      householdId,
+      ledgerId,
+      sourceType: "image",
+      entriesCreated: 3,
+      flaggedCount: 1,
+      modelUsed: "claude-opus-5",
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-18",
+    });
+
+    const { rows } = await pool.query<{
+      ledger_id: string;
+      period_start: string | null;
+      period_end: string | null;
+    }>(
+      `SELECT ledger_id, period_start, period_end FROM ai_extraction_logs
+       WHERE household_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [householdId],
+    );
+    expect(rows[0].ledger_id).toBe(ledgerId);
+    expect(rows[0].period_start).not.toBeNull();
+    expect(rows[0].period_end).not.toBeNull();
   });
 
   it("resolve categoria conhecida de forma insensível a acento/caixa", async () => {

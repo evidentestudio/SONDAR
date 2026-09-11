@@ -20,6 +20,7 @@ export type EntryRow = {
   payment_source_name: string | null;
   review_status: string;
   input_method: string;
+  amount_confidence: AmountConfidence;
   created_at: string;
   installment_plan_id: string | null;
   installment_number: number | null;
@@ -48,7 +49,7 @@ export async function listEntries(
        e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
        e.category_id, c.name AS category_name, c.category_type AS category_type,
        e.payment_source_id, ps.name AS payment_source_name,
-       e.review_status, e.input_method, e.created_at,
+       e.review_status, e.input_method, e.amount_confidence, e.created_at,
        e.installment_plan_id, e.installment_number, ip.total_installments
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
@@ -65,6 +66,10 @@ export async function listEntries(
 
 export type InputMethod = "manual" | "ai_image" | "ai_text";
 export type ReviewStatus = "confirmed" | "needs_review" | "possible_duplicate";
+/** "exact": valor exato (fatura, print, digitado). "approximate": arredondado
+ * pela própria pessoa ao falar (ex: "uns quarenta") — ver
+ * sondar-melhorias-multimodal.md seção 1.2. Usado pela sub-etapa de áudio. */
+export type AmountConfidence = "exact" | "approximate";
 
 export type CreateEntryInput = {
   ledgerId: string;
@@ -77,6 +82,7 @@ export type CreateEntryInput = {
   createdBy?: string | null;
   inputMethod?: InputMethod;
   reviewStatus?: ReviewStatus;
+  amountConfidence?: AmountConfidence;
   /** Set only by lib/installment-plans/service.ts — links this entry to its
    * parcela plan. Never set directly from a route: createInstallmentPlan is
    * the only caller that should ever pass these. */
@@ -134,8 +140,8 @@ export async function createEntry(
   const { rows } = await dbForHousehold<{ id: string }>(
     householdId,
     `INSERT INTO financial_entries
-       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, created_by, installment_plan_id, installment_number)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, amount_confidence, created_by, installment_plan_id, installment_number)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING id`,
     [
       householdId,
@@ -148,6 +154,7 @@ export async function createEntry(
       paymentSourceId,
       input.inputMethod ?? "manual",
       input.reviewStatus ?? "confirmed",
+      input.amountConfidence ?? "exact",
       input.createdBy ?? null,
       input.installmentPlanId ?? null,
       input.installmentNumber ?? null,

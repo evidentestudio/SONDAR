@@ -50,6 +50,35 @@ describe("lançamentos", () => {
     expect(entries[0].entry_date.slice(0, 10)).toBe("2026-09-10");
   });
 
+  it("amount_confidence é 'exact' por padrão e aceita 'approximate' explícito", async () => {
+    const cat = await createCategory(householdId, ledgerId, { name: "Categoria Confianca" });
+    if (cat.status !== "created") throw new Error("setup failed");
+
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-11",
+      description: "Sem confiança explícita",
+      amount: 15,
+      categoryId: cat.category.id,
+    });
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-11",
+      description: "Valor arredondado por áudio",
+      amount: 40,
+      categoryId: cat.category.id,
+      amountConfidence: "approximate",
+    });
+
+    const entries = await listEntries(householdId, ledgerId, MONTH);
+    const exact = entries.find((e) => e.description === "Sem confiança explícita")!;
+    const approximate = entries.find((e) => e.description === "Valor arredondado por áudio")!;
+    expect(exact.amount_confidence).toBe("exact");
+    expect(approximate.amount_confidence).toBe("approximate");
+  });
+
   it("despesa manual sem categoria escolhida cai em 'Aguardando Revisão' em vez de bloquear", async () => {
     const awaitingReviewId = await ensureAwaitingReviewCategory(householdId, ledgerId);
 

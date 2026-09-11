@@ -54,6 +54,24 @@ describe("regras de estabelecimento", () => {
     });
   });
 
+  it("rule_type é 'invoice_pattern' por padrão e aceita 'spoken_alias' explícito", async () => {
+    const invoiceRule = await createMerchantRule(householdId, ledgerId, {
+      pattern: "ifood-default-type",
+      categoryId: mercadoId,
+    });
+    const aliasRule = await createMerchantRule(householdId, ledgerId, {
+      pattern: "mercado",
+      categoryId: mercadoId,
+      ruleType: "spoken_alias",
+    });
+    expect(invoiceRule.status).toBe("created");
+    expect(aliasRule.status).toBe("created");
+    if (invoiceRule.status !== "created" || aliasRule.status !== "created") throw new Error("unreachable");
+
+    expect(invoiceRule.rule.rule_type).toBe("invoice_pattern");
+    expect(aliasRule.rule.rule_type).toBe("spoken_alias");
+  });
+
   it("regra ambígua nunca aplica categoria sozinha — força revisão", async () => {
     await createMerchantRule(householdId, ledgerId, {
       pattern: "anthropic",

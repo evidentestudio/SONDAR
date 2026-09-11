@@ -72,7 +72,14 @@ export async function POST(request: Request) {
 
     const items = await processExtractedItems(session.householdId, ledgerId, rawItems);
     const flaggedCount = items.filter((i) => i.needsReview || i.possibleDuplicate).length;
-    await logExtraction(session.householdId, sourceType, items.length, flaggedCount, "claude-opus-5");
+    await logExtraction({
+      householdId: session.householdId,
+      ledgerId,
+      sourceType,
+      entriesCreated: items.length,
+      flaggedCount,
+      modelUsed: "claude-opus-5",
+    });
 
     return NextResponse.json({ items, ledgerId });
   } catch (err) {

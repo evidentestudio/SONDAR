@@ -2,6 +2,12 @@ import { dbForHousehold } from "@/lib/db";
 import { normalizeStr, fuzzyMatch } from "@/lib/text/normalize";
 import { isLeafCategory } from "@/lib/categories/service";
 
+/** "invoice_pattern": casado por fuzzy match contra o texto de fatura (como
+ * sempre funcionou). "spoken_alias": apelido dito em áudio (ex: "mercado") —
+ * chave própria, nunca fuzzy-casada contra texto de fatura (colidiria com
+ * nomes reais de estabelecimento). Ver sondar-melhorias-multimodal.md 1.4. */
+export type MerchantRuleType = "invoice_pattern" | "spoken_alias";
+
 export type MerchantRuleRow = {
   id: string;
   household_id: string;
@@ -12,6 +18,7 @@ export type MerchantRuleRow = {
   ledger_id: string;
   ledger_name: string;
   is_ambiguous: boolean;
+  rule_type: MerchantRuleType;
   created_at: string;
   deleted_at: string | null;
 };
@@ -55,7 +62,7 @@ export type CreateMerchantRuleResult =
 export async function createMerchantRule(
   householdId: string,
   ledgerId: string,
-  input: { pattern: string; categoryId: string; isAmbiguous?: boolean },
+  input: { pattern: string; categoryId: string; isAmbiguous?: boolean; ruleType?: MerchantRuleType },
 ): Promise<CreateMerchantRuleResult> {
   const pattern = input.pattern.trim();
   if (!pattern) return { status: "error", message: "Padrão não pode ser vazio." };
@@ -71,10 +78,10 @@ export async function createMerchantRule(
 
   const { rows } = await dbForHousehold<{ id: string }>(
     householdId,
-    `INSERT INTO merchant_rules (household_id, pattern, category_id, is_ambiguous)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO merchant_rules (household_id, pattern, category_id, is_ambiguous, rule_type)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING id`,
-    [householdId, pattern, input.categoryId, input.isAmbiguous ?? false],
+    [householdId, pattern, input.categoryId, input.isAmbiguous ?? false, input.ruleType ?? "invoice_pattern"],
   );
 
   const [rule] = await dbForHousehold<MerchantRuleRow>(
