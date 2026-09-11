@@ -120,7 +120,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
               checked={leavesNoPaperTrail}
               onChange={(e) => setLeavesNoPaperTrail(e.target.checked)}
             />
-            Não fica registrada em nenhum outro lugar depois (sem fatura ou extrato para conferir)
+            Marque aqui se esse tipo de pagamento não fica registrado em uma fatura/extrato que será lançada depois (ex. pagamentos em dinheiro)
           </label>
           <button type="submit" className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white">
             Adicionar
@@ -157,7 +157,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
                   checked={editing.leavesNoPaperTrail}
                   onChange={(e) => setEditing({ ...editing, leavesNoPaperTrail: e.target.checked })}
                 />
-                Não fica registrada em nenhum outro lugar depois (sem fatura ou extrato para conferir)
+                Marque aqui se esse tipo de pagamento não fica registrado em uma fatura/extrato que será lançada depois (ex. pagamentos em dinheiro)
               </label>
               <button type="button" onClick={submitEdit} className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white">
                 Salvar
@@ -182,7 +182,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
                 {s.leaves_no_paper_trail && (
                   <span
                     className="rounded-full border border-border-strong px-2 py-0.5 text-xs text-muted"
-                    title="Não fica registrada em nenhum outro lugar depois — entra nos avisos de lacuna de registro"
+                    title="Não fica registrado em uma fatura/extrato que será lançada depois — entra nos avisos de lacuna de registro"
                   >
                     Sem registro depois
                   </span>
