@@ -368,16 +368,25 @@ export function ReviewModal({
           {!rows && (
             <div className="flex flex-col gap-4">
               {sourceType === "audio" ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-muted">
-                    Toque no campo abaixo pra abrir o teclado, depois toque no ícone de microfone{" "}
-                    <strong className="text-ink-soft">do próprio teclado</strong> (não é um botão desta
-                    tela) pra ditar o gasto — ex: &ldquo;gastei uns quarenta no mercado hoje no
-                    cartão&rdquo;.
-                  </p>
+                <div className="flex flex-col gap-3">
+                  <ol className="list-decimal space-y-1 pl-5 text-sm text-muted">
+                    <li>Toque no campo de texto logo abaixo pra abrir o teclado do seu celular.</li>
+                    <li>
+                      No teclado que abrir, toque no ícone de microfone (é do teclado, não desta tela) e
+                      dite o gasto — ex: &ldquo;gastei uns quarenta no mercado hoje no cartão&rdquo;.
+                    </li>
+                  </ol>
+                  <textarea
+                    ref={audioTextareaRef}
+                    value={audioText}
+                    onChange={(e) => setAudioText(e.target.value)}
+                    placeholder="Use o microfone do teclado para ditar o seu gasto"
+                    rows={4}
+                    className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
+                  />
                   <div className="relative self-center rounded-lg border border-dashed border-border-strong bg-paper px-4 pb-2 pt-5 opacity-80">
                     <span className="absolute left-2 top-1 rounded bg-border-strong px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
-                      exemplo ilustrativo
+                      exemplo ilustrativo — não é desta tela
                     </span>
                     <svg
                       viewBox="0 0 320 80"
@@ -396,21 +405,11 @@ export function ReviewModal({
                         fill="var(--color-card)"
                       />
                     </svg>
+                    <p className="mt-1 text-center text-[11px] text-muted">
+                      Referência de onde o ícone costuma ficar — no seu teclado a posição varia (iPhone:
+                      perto do espaço/&ldquo;retornar&rdquo;; Android/Gboard: perto do emoji).
+                    </p>
                   </div>
-                  <p className="text-center text-xs text-muted">
-                    O desenho acima é só um exemplo de onde esse ícone costuma ficar — não é uma peça
-                    clicável desta tela. No seu teclado de verdade, a posição varia: no iPhone costuma
-                    ficar perto do espaço ou do &ldquo;retornar&rdquo;; no Android (Gboard), perto do
-                    emoji.
-                  </p>
-                  <textarea
-                    ref={audioTextareaRef}
-                    value={audioText}
-                    onChange={(e) => setAudioText(e.target.value)}
-                    placeholder="Use o microfone do teclado para ditar o seu gasto"
-                    rows={4}
-                    className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
-                  />
                 </div>
               ) : sourceType === "image" ? (
                 <div
