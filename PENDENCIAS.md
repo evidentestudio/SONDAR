@@ -180,5 +180,14 @@ o gatilho de quando revisitar.
        "chave determinística" mais estrita pra duplicata de mesma origem
        estruturada (hoje ainda usa o `checkPossibleDuplicate` mais simples
        de categoria+valor+mês da Etapa 3).
+       Adição: `financial_entries.audio_confirmed_at`
+       (`db/009_audio_confirmation.sql`) marca de forma persistente quando
+       essa fusão aconteceu — antes só dava pra ver no instante do aviso
+       na tela de revisão. UI mostra um "🔄" na lista de Lançamentos.
+       Pensado pra deixar validar com uso real (falar gastos normalmente
+       e depois processar a fatura de verdade) antes de qualquer uso
+       comercial, sem precisar montar um roteiro de teste artificial.
+       **Pendente rodar em produção** — mesmo passo de sempre (Neon SQL
+       Editor + registrar em `_sondar_migrations`).
     6. ⬜ Lacunas de registro (dinheiro/Pix) — não iniciada.
     7. ⬜ Revisão em lote — não iniciada.

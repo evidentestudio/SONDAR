@@ -772,6 +772,14 @@ function LedgerPanel({
                                 🔁
                               </span>
                             )}
+                            {entry.audio_confirmed_at && (
+                              <span
+                                className="ml-1 text-xs text-muted"
+                                title="Falado por áudio e depois confirmado pelo valor exato da fatura/texto"
+                              >
+                                🔄
+                              </span>
+                            )}
                           </td>
                           <td
                             className="py-2"

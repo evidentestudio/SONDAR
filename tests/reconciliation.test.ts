@@ -226,6 +226,9 @@ describe("conciliação por hierarquia de fontes (fatura é a verdade, áudio é
     expect(updated.entry_date.slice(0, 10)).toBe("2026-09-06");
     expect(updated.amount_confidence).toBe("exact");
     expect(updated.input_method).toBe("ai_image");
+    // Marca persistente pra dar pra conferir depois, sem depender de ter
+    // visto o aviso na tela de revisão no momento exato da fusão.
+    expect(updated.audio_confirmed_at).not.toBeNull();
 
     // Já conciliado (exact agora) — não pode virar candidato de novo.
     const secondLookup = await findReconciliationCandidate(householdId, ledgerId, {

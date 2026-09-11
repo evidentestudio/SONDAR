@@ -1,0 +1,16 @@
+-- ---------------------------------------------------------------------------
+-- financial_entries.audio_confirmed_at
+-- ---------------------------------------------------------------------------
+-- Marca o momento em que um rascunho de áudio (amount_confidence
+-- 'approximate') foi fundido com um lançamento de fatura/texto pela
+-- hierarquia de fontes (sondar-melhorias-multimodal.md seção 2.3,
+-- reconcileEntry em src/lib/entries/service.ts). Sem essa marca, o
+-- lançamento fica indistinguível de um lançamento normal depois da fusão —
+-- não dava pra conferir depois, só no instante em que a fatura era salva
+-- (o aviso da tela de revisão). NULL = nunca foi conciliado dessa forma.
+--
+-- Nome deliberadamente diferente de "reconciled_at"/"conciliado" (que já
+-- nomeia a função em geral) — marca especificamente a confirmação do
+-- rascunho de ÁUDIO por uma fonte de verdade, não qualquer conciliação
+-- futura (ex: um eventual saldo bancário).
+ALTER TABLE financial_entries ADD COLUMN audio_confirmed_at TIMESTAMPTZ;

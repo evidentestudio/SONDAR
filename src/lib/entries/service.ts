@@ -25,6 +25,10 @@ export type EntryRow = {
   installment_plan_id: string | null;
   installment_number: number | null;
   total_installments: number | null;
+  /** Preenchido só quando esse lançamento foi um rascunho de áudio fundido
+   * com uma fatura/texto pela hierarquia de fontes (reconcileEntry, seção
+   * 2.3) — null caso contrário. Ver db/009_audio_confirmation.sql. */
+  audio_confirmed_at: string | null;
 };
 
 export async function listEntries(
@@ -50,7 +54,8 @@ export async function listEntries(
        e.category_id, c.name AS category_name, c.category_type AS category_type,
        e.payment_source_id, ps.name AS payment_source_name,
        e.review_status, e.input_method, e.amount_confidence, e.created_at,
-       e.installment_plan_id, e.installment_number, ip.total_installments
+       e.installment_plan_id, e.installment_number, ip.total_installments,
+       e.audio_confirmed_at
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
@@ -333,7 +338,8 @@ export async function reconcileEntry(
     householdId,
     `UPDATE financial_entries
        SET amount = $1, entry_date = $2, amount_confidence = 'exact',
-           input_method = $3, review_status = $4, updated_at = now()
+           input_method = $3, review_status = $4, audio_confirmed_at = now(),
+           updated_at = now()
      WHERE id = $5 AND household_id = $6 AND deleted_at IS NULL
      RETURNING id`,
     [input.amount, input.entryDate, input.inputMethod, input.reviewStatus, entryId, householdId],
