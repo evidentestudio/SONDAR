@@ -9,7 +9,13 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
   const [color, setColor] = useState("#2F6F5E");
-  const [editing, setEditing] = useState<{ id: string; name: string; color: string } | null>(null);
+  const [leavesNoPaperTrail, setLeavesNoPaperTrail] = useState(false);
+  const [editing, setEditing] = useState<{
+    id: string;
+    name: string;
+    color: string;
+    leavesNoPaperTrail: boolean;
+  } | null>(null);
 
   async function refetch() {
     const res = await fetch("/api/payment-sources");
@@ -22,7 +28,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
     const res = await fetch("/api/payment-sources", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, color }),
+      body: JSON.stringify({ name, color, leavesNoPaperTrail }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -30,6 +36,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
       return;
     }
     setName("");
+    setLeavesNoPaperTrail(false);
     setAdding(false);
     await refetch();
   }
@@ -40,7 +47,11 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
     const res = await fetch(`/api/payment-sources/${editing.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: editing.name, color: editing.color }),
+      body: JSON.stringify({
+        name: editing.name,
+        color: editing.color,
+        leavesNoPaperTrail: editing.leavesNoPaperTrail,
+      }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -87,7 +98,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
             e.preventDefault();
             submitCreate();
           }}
-          className="flex items-center gap-2 rounded-lg border border-border-strong bg-card p-2"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-border-strong bg-card p-2"
         >
           <input
             type="color"
@@ -103,6 +114,14 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
             placeholder="Nome da forma de pagamento"
             className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm outline-none focus:border-accent"
           />
+          <label className="flex items-center gap-1 text-xs text-ink-soft">
+            <input
+              type="checkbox"
+              checked={leavesNoPaperTrail}
+              onChange={(e) => setLeavesNoPaperTrail(e.target.checked)}
+            />
+            Dinheiro ou Pix (sem fatura pra conferir depois)
+          </label>
           <button type="submit" className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white">
             Adicionar
           </button>
@@ -118,7 +137,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
         )}
         {sources.map((s) =>
           editing?.id === s.id ? (
-            <div key={s.id} className="flex items-center gap-2 border-b border-border px-4 py-2 last:border-b-0">
+            <div key={s.id} className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 last:border-b-0">
               <input
                 type="color"
                 value={editing.color}
@@ -132,6 +151,14 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
                 onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                 className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm"
               />
+              <label className="flex items-center gap-1 text-xs text-ink-soft">
+                <input
+                  type="checkbox"
+                  checked={editing.leavesNoPaperTrail}
+                  onChange={(e) => setEditing({ ...editing, leavesNoPaperTrail: e.target.checked })}
+                />
+                Dinheiro ou Pix (sem fatura pra conferir depois)
+              </label>
               <button type="button" onClick={submitEdit} className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white">
                 Salvar
               </button>
@@ -152,6 +179,14 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
                     Principal
                   </span>
                 )}
+                {s.leaves_no_paper_trail && (
+                  <span
+                    className="rounded-full border border-border-strong px-2 py-0.5 text-xs text-muted"
+                    title="Sem comprovante automático — entra nos avisos de lacuna de registro"
+                  >
+                    Sem comprovante
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
                 {!s.is_default && (
@@ -166,7 +201,14 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
                 )}
                 <button
                   type="button"
-                  onClick={() => setEditing({ id: s.id, name: s.name, color: s.color ?? "#2F6F5E" })}
+                  onClick={() =>
+                    setEditing({
+                      id: s.id,
+                      name: s.name,
+                      color: s.color ?? "#2F6F5E",
+                      leavesNoPaperTrail: s.leaves_no_paper_trail,
+                    })
+                  }
                   className="min-h-8 min-w-8 rounded px-2 text-ink-soft"
                 >
                   ✎

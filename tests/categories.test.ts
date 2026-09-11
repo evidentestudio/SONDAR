@@ -4,7 +4,9 @@ import {
   createCategory,
   deleteCategory,
   ensureAwaitingReviewCategory,
+  getCategoryById,
   getCategoryTree,
+  setGapAlertsSilenced,
   updateCategory,
 } from "@/lib/categories/service";
 
@@ -261,6 +263,22 @@ describe("categorias — Etapa 1", () => {
 
       const second = await createCategory(householdId, ledgerId, { name: "Lazer" });
       expect(second.status).toBe("created");
+    });
+  });
+
+  describe("silenciar avisos de lacuna de registro", () => {
+    it("gap_alerts_silenced_at começa null e pode ser ligado/desligado", async () => {
+      const cat = await createCategory(householdId, ledgerId, { name: "Feira" });
+      if (cat.status !== "created") throw new Error("setup failed");
+      expect(cat.category.gap_alerts_silenced_at).toBeNull();
+
+      await setGapAlertsSilenced(householdId, cat.category.id, true);
+      const silenced = await getCategoryById(householdId, cat.category.id);
+      expect(silenced?.gap_alerts_silenced_at).not.toBeNull();
+
+      await setGapAlertsSilenced(householdId, cat.category.id, false);
+      const reactivated = await getCategoryById(householdId, cat.category.id);
+      expect(reactivated?.gap_alerts_silenced_at).toBeNull();
     });
   });
 });

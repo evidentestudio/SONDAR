@@ -15,6 +15,9 @@ export type CategoryRow = {
   sort_order: number;
   created_at: string;
   deleted_at: string | null;
+  /** "Não me avise mais sobre isso" (sondar-melhorias-multimodal.md seção
+   * 3.3) — obrigatório por categoria. NULL = avisos de lacuna ativos. */
+  gap_alerts_silenced_at: string | null;
 };
 
 export type CategoryNode = CategoryRow & { children: CategoryNode[] };
@@ -328,4 +331,21 @@ export async function deleteCategory(
 
   await dbForHousehold(householdId, `UPDATE categories SET deleted_at = now() WHERE id = $1`, [categoryId]);
   return { status: "deleted" };
+}
+
+/**
+ * "Não me avise mais sobre isso" por categoria — obrigatório
+ * (sondar-melhorias-multimodal.md seção 3.3), senão quem cortou uma
+ * categoria de dinheiro/Pix de propósito receberia o aviso pra sempre.
+ */
+export async function setGapAlertsSilenced(
+  householdId: string,
+  categoryId: string,
+  silenced: boolean,
+): Promise<void> {
+  await dbForHousehold(
+    householdId,
+    `UPDATE categories SET gap_alerts_silenced_at = $1 WHERE id = $2 AND household_id = $3`,
+    [silenced ? new Date().toISOString() : null, categoryId, householdId],
+  );
 }

@@ -14,11 +14,14 @@ type PaymentSourceTotal = { paymentSourceId: string; paymentSourceName: string; 
 type MonthTotals = { gastoTotal: number; creditosTotal: number };
 type LeafOption = { id: string; name: string };
 
+type GapWarning = { categoryId: string; categoryName: string; kind: "missing" | "drop"; message: string };
+
 type LedgerData = {
   categories: CategorySummaryNode[];
   totals: MonthTotals;
   paymentSourceTotals: PaymentSourceTotal[];
   entries: EntryRow[];
+  gapWarnings: GapWarning[];
 };
 
 function flattenLeafCategories(nodes: CategorySummaryNode[]): CategorySummaryNode[] {
@@ -174,6 +177,8 @@ function LedgerPanel({
     initialData?.paymentSourceTotals ?? [],
   );
   const [entries, setEntries] = useState<EntryRow[]>(initialData?.entries ?? []);
+  const [gapWarnings, setGapWarnings] = useState<GapWarning[]>(initialData?.gapWarnings ?? []);
+  const [presetCategoryId, setPresetCategoryId] = useState<string | null>(null);
   const [entryFilters, setEntryFilters] = useState({
     categoryId: "",
     paymentSourceId: "",
@@ -268,13 +273,26 @@ function LedgerPanel({
     [ledgerId],
   );
 
+  // Avisos de lacuna de registro (seção 3) só fazem sentido no orçamento
+  // "Principal" — mesmo escopo dos botões de lançamento rápido
+  // (showEntryControls), evita uma chamada a mais por suborçamento aberto.
+  const loadGapWarnings = useCallback(
+    async (m: string) => {
+      if (!showEntryControls) return;
+      const res = await fetch(`/api/gap-warnings?${new URLSearchParams({ month: m, ledgerId })}`);
+      const data = await res.json();
+      setGapWarnings(data.warnings ?? []);
+    },
+    [ledgerId, showEntryControls],
+  );
+
   useEffect(() => {
     if (skipNextLoad.current) {
       skipNextLoad.current = false;
       return;
     }
-    Promise.all([loadSummary(month), loadEntries(month)]);
-  }, [ledgerId, month, loadSummary, loadEntries]);
+    Promise.all([loadSummary(month), loadEntries(month), loadGapWarnings(month)]);
+  }, [ledgerId, month, loadSummary, loadEntries, loadGapWarnings]);
 
   async function copyPreviousBudget() {
     setError(null);
@@ -352,14 +370,30 @@ function LedgerPanel({
       return;
     }
     setShowAddEntry(false);
+    setPresetCategoryId(null);
     if (input.ledgerId === ledgerId) {
-      await Promise.all([loadSummary(month), loadEntries(month)]);
+      await Promise.all([loadSummary(month), loadEntries(month), loadGapWarnings(month)]);
     }
   }
 
   async function removeEntry(id: string) {
     await fetch(`/api/entries/${id}`, { method: "DELETE" });
-    await Promise.all([loadSummary(month), loadEntries(month)]);
+    await Promise.all([loadSummary(month), loadEntries(month), loadGapWarnings(month)]);
+  }
+
+  function openEntryFormForGap(categoryId: string) {
+    setPresetCategoryId(categoryId);
+    setShowAddEntry(true);
+    setEntriesCollapsed(false);
+  }
+
+  async function silenceGapWarning(categoryId: string) {
+    await fetch(`/api/categories/${categoryId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gapAlertsSilenced: true }),
+    });
+    setGapWarnings((prev) => prev.filter((w) => w.categoryId !== categoryId));
   }
 
   function startEditEntry(entry: EntryRow) {
@@ -424,6 +458,36 @@ function LedgerPanel({
       {error && (
         <div className="rounded-lg border border-rust bg-rust-light px-4 py-2 text-sm text-rust">
           {error}
+        </div>
+      )}
+
+      {gapWarnings.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {gapWarnings.map((w) => (
+            <div
+              key={w.categoryId}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-4 py-2 text-sm"
+              style={{ background: "var(--row-awaiting-bg)", color: "var(--row-awaiting-text)" }}
+            >
+              <span>{w.message}</span>
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={() => openEntryFormForGap(w.categoryId)}
+                  className="min-h-8 rounded px-2 text-sm underline"
+                >
+                  Lançar agora
+                </button>
+                <button
+                  type="button"
+                  onClick={() => silenceGapWarning(w.categoryId)}
+                  className="min-h-8 rounded px-2 text-sm underline"
+                >
+                  Não me avise mais
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -531,7 +595,11 @@ function LedgerPanel({
                 ledgers={ledgers}
                 defaultLedgerId={ledgerId}
                 paymentSources={paymentSources}
-                onCancel={() => setShowAddEntry(false)}
+                initialCategoryId={presetCategoryId}
+                onCancel={() => {
+                  setShowAddEntry(false);
+                  setPresetCategoryId(null);
+                }}
                 onSubmit={submitEntry}
               />
             )}
@@ -1095,6 +1163,7 @@ function EntryForm({
   ledgers,
   defaultLedgerId,
   paymentSources,
+  initialCategoryId,
   onSubmit,
   onCancel,
 }: {
@@ -1103,6 +1172,10 @@ function EntryForm({
   ledgers: LedgerRow[];
   defaultLedgerId: string;
   paymentSources: PaymentSourceRow[];
+  /** Pré-preenche a categoria — usado pelo aviso de lacuna de registro
+   * (seção 3.2: tocar no lembrete abre o lançamento já com a categoria
+   * certa, mas SEM valor algum, a pessoa sempre digita). */
+  initialCategoryId?: string | null;
   onSubmit: (input: {
     entryType: EntryType;
     entryDate: string;
@@ -1131,7 +1204,7 @@ function EntryForm({
   const [amount, setAmount] = useState("");
   const [ledgerId, setLedgerId] = useState(defaultLedgerId);
   const [leaves, setLeaves] = useState<LeafOption[]>(initialLeaves);
-  const [categoryId, setCategoryId] = useState("");
+  const [categoryId, setCategoryId] = useState(initialCategoryId ?? "");
   const [paymentSourceId, setPaymentSourceId] = useState(
     () => paymentSources.find((p) => p.is_default)?.id ?? "",
   );

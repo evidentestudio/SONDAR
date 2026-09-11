@@ -20,6 +20,7 @@ export async function POST(request: Request) {
   const result = await createPaymentSource(session.householdId, {
     name,
     color: typeof body?.color === "string" ? body.color : null,
+    leavesNoPaperTrail: body?.leavesNoPaperTrail === true,
   });
 
   if (result.status === "error") {

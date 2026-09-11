@@ -8,6 +8,7 @@ import { getCategoryMonthSummary, getMonthTotals, getPaymentSourceTotals } from 
 import { listEntries } from "@/lib/entries/service";
 import { listPaymentSources } from "@/lib/payment-sources/service";
 import { ensureDefaultLedger, listLedgers } from "@/lib/ledgers/service";
+import { findGapWarnings } from "@/lib/gap-warnings/service";
 
 export default async function Home() {
   const session = await getSession();
@@ -17,14 +18,16 @@ export default async function Home() {
 
   const month = currentMonthKey();
   const defaultLedgerId = await ensureDefaultLedger(session.householdId);
-  const [ledgers, categories, totals, paymentSourceTotals, entries, paymentSources] = await Promise.all([
-    listLedgers(session.householdId),
-    getCategoryMonthSummary(session.householdId, defaultLedgerId, month),
-    getMonthTotals(session.householdId, defaultLedgerId, month),
-    getPaymentSourceTotals(session.householdId, defaultLedgerId, month),
-    listEntries(session.householdId, defaultLedgerId, month),
-    listPaymentSources(session.householdId),
-  ]);
+  const [ledgers, categories, totals, paymentSourceTotals, entries, paymentSources, gapWarnings] =
+    await Promise.all([
+      listLedgers(session.householdId),
+      getCategoryMonthSummary(session.householdId, defaultLedgerId, month),
+      getMonthTotals(session.householdId, defaultLedgerId, month),
+      getPaymentSourceTotals(session.householdId, defaultLedgerId, month),
+      listEntries(session.householdId, defaultLedgerId, month),
+      listPaymentSources(session.householdId),
+      findGapWarnings(session.householdId, defaultLedgerId, month),
+    ]);
 
   return (
     <div className="flex min-h-screen flex-col bg-paper">
@@ -61,7 +64,7 @@ export default async function Home() {
           initialMonth={month}
           ledgers={ledgers}
           defaultLedgerId={defaultLedgerId}
-          initialData={{ categories, totals, paymentSourceTotals, entries }}
+          initialData={{ categories, totals, paymentSourceTotals, entries, gapWarnings }}
           paymentSources={paymentSources}
         />
       </main>

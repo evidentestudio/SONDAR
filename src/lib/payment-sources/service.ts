@@ -9,6 +9,11 @@ export type PaymentSourceRow = {
   color: string | null;
   sort_order: number;
   is_default: boolean;
+  /** Marca formas de pagamento sem comprovante automático (dinheiro, Pix) —
+   * a pessoa escolhe explicitamente, nunca adivinhado por nome (formas de
+   * pagamento são livres). Usado pelos avisos de lacuna de registro
+   * (sondar-melhorias-multimodal.md seção 3). */
+  leaves_no_paper_trail: boolean;
   created_at: string;
   deleted_at: string | null;
 };
@@ -62,7 +67,7 @@ export type CreatePaymentSourceResult =
 
 export async function createPaymentSource(
   householdId: string,
-  input: { name: string; color?: string | null },
+  input: { name: string; color?: string | null; leavesNoPaperTrail?: boolean },
 ): Promise<CreatePaymentSourceResult> {
   const name = input.name.trim();
   if (!name) return { status: "error", message: "Nome não pode ser vazio." };
@@ -74,8 +79,9 @@ export async function createPaymentSource(
 
   const { rows } = await dbForHousehold<PaymentSourceRow>(
     householdId,
-    `INSERT INTO payment_sources (household_id, name, color) VALUES ($1, $2, $3) RETURNING *`,
-    [householdId, name, input.color ?? null],
+    `INSERT INTO payment_sources (household_id, name, color, leaves_no_paper_trail)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [householdId, name, input.color ?? null, input.leavesNoPaperTrail === true],
   );
   return { status: "created", source: rows[0] };
 }
@@ -87,7 +93,7 @@ export type UpdatePaymentSourceResult =
 export async function updatePaymentSource(
   householdId: string,
   id: string,
-  input: { name?: string; color?: string | null },
+  input: { name?: string; color?: string | null; leavesNoPaperTrail?: boolean },
 ): Promise<UpdatePaymentSourceResult> {
   const { rows: existingRows } = await dbForHousehold<PaymentSourceRow>(
     householdId,
@@ -113,6 +119,10 @@ export async function updatePaymentSource(
   if ("color" in input) {
     values.push(input.color);
     sets.push(`color = $${values.length}`);
+  }
+  if (input.leavesNoPaperTrail !== undefined) {
+    values.push(input.leavesNoPaperTrail);
+    sets.push(`leaves_no_paper_trail = $${values.length}`);
   }
 
   if (sets.length === 0) return { status: "updated", source: current };

@@ -189,5 +189,17 @@ o gatilho de quando revisitar.
        comercial, sem precisar montar um roteiro de teste artificial.
        **Pendente rodar em produção** — mesmo passo de sempre (Neon SQL
        Editor + registrar em `_sondar_migrations`).
-    6. ⬜ Lacunas de registro (dinheiro/Pix) — não iniciada.
+    6. 🟡 Lacunas de registro (dinheiro/Pix) — `payment_sources.leaves_no_paper_trail`
+       (marcado explicitamente pela pessoa ao criar/editar uma forma de
+       pagamento — nunca adivinhado por nome) + `categories.gap_alerts_silenced_at`
+       (`db/010_gap_warnings.sql`). `findGapWarnings`
+       (`src/lib/gap-warnings/service.ts`) exige 3 meses seguidos de
+       atividade em dinheiro/Pix numa categoria antes de avisar (seção
+       3.3): mês atual sem nenhum lançamento → aviso "missing" (seção
+       3.2); mês atual com menos da metade da média anterior → aviso
+       "drop" (seção 3.1). Nunca sugere valor. Aparece como banner no
+       orçamento Principal, com "Lançar agora" (abre o formulário já com
+       a categoria certa, campo de valor vazio) e "Não me avise mais"
+       (obrigatório, por categoria, persistente).
+       **Pendente rodar em produção** — mesmo passo de sempre.
     7. ⬜ Revisão em lote — não iniciada.

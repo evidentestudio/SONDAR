@@ -14,9 +14,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true });
   }
 
-  const input: { name?: string; color?: string | null } = {};
+  const input: { name?: string; color?: string | null; leavesNoPaperTrail?: boolean } = {};
   if (typeof body?.name === "string") input.name = body.name;
   if ("color" in (body ?? {})) input.color = body.color;
+  if (typeof body?.leavesNoPaperTrail === "boolean") input.leavesNoPaperTrail = body.leavesNoPaperTrail;
 
   const result = await updatePaymentSource(session.householdId, id, input);
   if (result.status === "error") {

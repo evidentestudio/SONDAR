@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
-import { deleteCategory, updateCategory } from "@/lib/categories/service";
+import { deleteCategory, updateCategory, setGapAlertsSilenced } from "@/lib/categories/service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -8,6 +8,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
+
+  if (typeof body?.gapAlertsSilenced === "boolean") {
+    await setGapAlertsSilenced(session.householdId, id, body.gapAlertsSilenced);
+    return NextResponse.json({ ok: true });
+  }
 
   const input: { name?: string; color?: string | null; icon?: string | null } = {};
   if (typeof body?.name === "string") input.name = body.name;
