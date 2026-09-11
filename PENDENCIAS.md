@@ -90,8 +90,28 @@ o gatilho de quando revisitar.
 
 ## Roteiro
 
-- `sondar-etapas-implementacao.md` ainda precisa ser reenviado pra
-  confirmar o escopo exato da Etapa 5 em diante.
+- `sondar-etapas-implementacao.md` (recebido em 2026-09-11) — roteiro
+  mestre, salvo na raiz do repositório. Status de cada etapa frente ao que
+  já foi construído:
+  - ✅ Etapa 0 (Fundação), 1 (Categorias), 2 (Orçamento/lançamento manual/
+    origem), 3 (Extração por IA/regras), 4 (Parcelamento) — concluídas.
+  - ✅ Etapa 3.5 (Orçamentos paralelos / ledgers) — não existia neste
+    documento original, foi inserida depois entre a 3 e a 4; concluída.
+  - 🟡 Multi-Família — inserida antes da Etapa 5 por decisão do usuário
+    (também não prevista neste documento original): cadastro/multi-tenant/
+    RLS concluídos, LGPD em andamento (ver seção acima).
+  - ⬜ Etapa 5 (Divisão de lançamento em N categorias) — não iniciada.
+  - ⬜ Etapa 6 (Painéis e relatórios, radar financeiro, sugestão por IA) —
+    não iniciada.
+  - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar
+    backup/confiabilidade) — não iniciada. Observação: "desfazer" e
+    "exportar backup" se sobrepõem com os itens de LGPD (trilha de
+    auditoria, exportar meus dados) — ao chegar nessa etapa, decidir se
+    são a mesma implementação ou duas coisas separadas.
+  - Depois da Etapa 7: cobrança/planos pagos entra só aí, conforme o
+    próprio documento — o que a Multi-Família adiantou (cadastro,
+    isolamento) já cobre parte disso mais cedo, por decisão explícita do
+    usuário de trazer para antes da Etapa 5.
 - `sondar-melhorias-multimodal.md` (2026-09-11) — complemento ao roteiro
   acima, ainda não encaixado por prioridade (decisão do usuário, não
   decidida ainda). Resumo de cada seção, pra não perder de vista:
