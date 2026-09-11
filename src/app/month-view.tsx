@@ -469,7 +469,7 @@ function LedgerPanel({
                 setShowAddEntry((v) => !v);
                 setEntriesCollapsed(false);
               }}
-              className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
+              className="min-h-11 rounded-lg bg-accent px-3 text-sm font-medium text-white"
             >
               +NOVO
             </button>
@@ -480,9 +480,9 @@ function LedgerPanel({
                 setReviewInitialAction(undefined);
                 setShowReview(true);
               }}
-              className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
+              className="min-h-11 rounded-lg border border-border-strong px-2 text-sm text-accent-dark"
             >
-              🖼️ Imagem
+              Imagem
             </button>
             <button
               type="button"
@@ -493,7 +493,7 @@ function LedgerPanel({
                 setReviewInitialAction("camera");
                 setShowReview(true);
               }}
-              className={`min-h-11 rounded-lg border border-border-strong px-4 text-sm ${
+              className={`min-h-11 rounded-lg border border-border-strong px-3 text-sm ${
                 isMobileDevice ? "text-accent-dark" : "cursor-not-allowed text-muted opacity-60"
               }`}
             >
