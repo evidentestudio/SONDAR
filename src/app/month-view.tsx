@@ -442,6 +442,16 @@ function LedgerPanel({
                 <button
                   type="button"
                   onClick={() => {
+                    setShowAddEntry((v) => !v);
+                    setEntriesCollapsed(false);
+                  }}
+                  className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
+                >
+                  +NOVO
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setReviewInitialSourceType("image");
                     setShowReview(true);
                   }}
@@ -458,16 +468,6 @@ function LedgerPanel({
                   className="min-h-11 rounded-lg border border-border-strong px-4 text-sm text-accent-dark"
                 >
                   🎤 Falar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAddEntry((v) => !v);
-                    setEntriesCollapsed(false);
-                  }}
-                  className="min-h-11 rounded-lg bg-accent px-4 text-sm font-medium text-white"
-                >
-                  +NOVO
                 </button>
               </>
             )}
