@@ -344,7 +344,15 @@ export function ReviewModal({
     >
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <h2 className="font-serif text-lg text-ink">Processar fatura</h2>
+          <h2 className="font-serif text-lg text-ink">
+            {rows
+              ? "Revisar lançamentos"
+              : sourceType === "audio"
+                ? "Falar"
+                : sourceType === "text"
+                  ? "Colar texto da fatura"
+                  : "Enviar imagem"}
+          </h2>
           <button type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg text-muted">
             ×
           </button>
@@ -359,30 +367,6 @@ export function ReviewModal({
 
           {!rows && (
             <div className="flex flex-col gap-4">
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSourceType("image")}
-                  className={`min-h-11 rounded-lg px-4 text-sm ${sourceType === "image" ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
-                >
-                  Imagem
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSourceType("text")}
-                  className={`min-h-11 rounded-lg px-4 text-sm ${sourceType === "text" ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
-                >
-                  Texto colado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSourceType("audio")}
-                  className={`min-h-11 rounded-lg px-4 text-sm ${sourceType === "audio" ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
-                >
-                  🎤 Falar
-                </button>
-              </div>
-
               {sourceType === "audio" ? (
                 <div className="flex flex-col gap-2">
                   <p className="text-sm text-muted">
@@ -485,6 +469,18 @@ export function ReviewModal({
                   rows={10}
                   className="w-full rounded-lg border border-border-strong p-3 text-sm outline-none focus:border-accent"
                 />
+              )}
+
+              {sourceType !== "audio" && (
+                <button
+                  type="button"
+                  onClick={() => setSourceType(sourceType === "image" ? "text" : "image")}
+                  className="self-start text-sm text-accent-dark underline-offset-2 hover:underline"
+                >
+                  {sourceType === "image"
+                    ? "ou cole o texto da fatura em vez de enviar imagem"
+                    : "ou envie a imagem da fatura em vez de colar o texto"}
+                </button>
               )}
 
               <button
