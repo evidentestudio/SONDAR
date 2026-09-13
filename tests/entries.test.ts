@@ -1,7 +1,13 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { getPool } from "@/lib/db";
 import { createCategory, ensureAwaitingReviewCategory } from "@/lib/categories/service";
-import { createEntry, listEntries, updateEntry } from "@/lib/entries/service";
+import {
+  createEntry,
+  listEntries,
+  updateEntry,
+  listEntriesForReview,
+  markEntryReviewed,
+} from "@/lib/entries/service";
 
 const pool = getPool();
 const MONTH = "2026-09";
@@ -155,5 +161,97 @@ describe("lançamentos", () => {
 
     await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [otherHouseholdRows[0].id]);
     await pool.query(`DELETE FROM households WHERE id = $1`, [otherHouseholdRows[0].id]);
+  });
+
+  describe("revisão em lote (sondar-melhorias-multimodal.md seção 5)", () => {
+    it("listEntriesForReview só traz needs_review/possible_duplicate, nunca confirmed", async () => {
+      const cat = await createCategory(householdId, ledgerId, { name: "Categoria Fila" });
+      if (cat.status !== "created") throw new Error("setup failed");
+
+      const needsReview = await createEntry(householdId, {
+        ledgerId,
+        entryType: "expense",
+        entryDate: "2026-01-05",
+        description: "Precisa revisar",
+        amount: 10,
+        categoryId: cat.category.id,
+        reviewStatus: "needs_review",
+      });
+      const possibleDup = await createEntry(householdId, {
+        ledgerId,
+        entryType: "expense",
+        entryDate: "2026-02-05",
+        description: "Possível duplicata",
+        amount: 20,
+        categoryId: cat.category.id,
+        reviewStatus: "possible_duplicate",
+      });
+      const confirmed = await createEntry(householdId, {
+        ledgerId,
+        entryType: "expense",
+        entryDate: "2026-03-05",
+        description: "Já confirmado",
+        amount: 30,
+        categoryId: cat.category.id,
+      });
+      if (needsReview.status !== "created" || possibleDup.status !== "created" || confirmed.status !== "created") {
+        throw new Error("setup failed");
+      }
+
+      const queue = await listEntriesForReview(householdId);
+      const ids = queue.map((e) => e.id);
+      expect(ids).toContain(needsReview.entry.id);
+      expect(ids).toContain(possibleDup.entry.id);
+      expect(ids).not.toContain(confirmed.entry.id);
+    });
+
+    it("editar um lançamento sinalizado limpa o review_status automaticamente", async () => {
+      const cat = await createCategory(householdId, ledgerId, { name: "Categoria Fila 2" });
+      if (cat.status !== "created") throw new Error("setup failed");
+
+      const flagged = await createEntry(householdId, {
+        ledgerId,
+        entryType: "expense",
+        entryDate: "2026-04-05",
+        description: "Sinalizado",
+        amount: 10,
+        categoryId: cat.category.id,
+        reviewStatus: "needs_review",
+      });
+      if (flagged.status !== "created") throw new Error("setup failed");
+
+      await updateEntry(householdId, flagged.entry.id, { description: "Corrigido" });
+
+      const queue = await listEntriesForReview(householdId);
+      expect(queue.map((e) => e.id)).not.toContain(flagged.entry.id);
+
+      const entries = await listEntries(householdId, ledgerId, "2026-04");
+      const updated = entries.find((e) => e.id === flagged.entry.id)!;
+      expect(updated.review_status).toBe("confirmed");
+    });
+
+    it("markEntryReviewed confirma sem alterar nenhum outro campo", async () => {
+      const cat = await createCategory(householdId, ledgerId, { name: "Categoria Fila 3" });
+      if (cat.status !== "created") throw new Error("setup failed");
+
+      const flagged = await createEntry(householdId, {
+        ledgerId,
+        entryType: "expense",
+        entryDate: "2026-05-05",
+        description: "Duplicata legítima",
+        amount: 10,
+        categoryId: cat.category.id,
+        reviewStatus: "possible_duplicate",
+      });
+      if (flagged.status !== "created") throw new Error("setup failed");
+
+      await markEntryReviewed(householdId, flagged.entry.id);
+
+      const entries = await listEntries(householdId, ledgerId, "2026-05");
+      const updated = entries.find((e) => e.id === flagged.entry.id)!;
+      expect(updated.review_status).toBe("confirmed");
+      expect(updated.description).toBe("Duplicata legítima");
+      expect(updated.amount).toBe("10.00");
+    });
   });
 });

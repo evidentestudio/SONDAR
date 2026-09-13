@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
-import { deleteEntry, updateEntry } from "@/lib/entries/service";
+import { deleteEntry, markEntryReviewed, updateEntry } from "@/lib/entries/service";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -8,6 +8,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { id } = await params;
   const body = await request.json().catch(() => null);
+
+  if (body?.confirmReview === true) {
+    await markEntryReviewed(session.householdId, id);
+    return NextResponse.json({ ok: true });
+  }
 
   const input: {
     description?: string;

@@ -9,6 +9,7 @@ import { listEntries } from "@/lib/entries/service";
 import { listPaymentSources } from "@/lib/payment-sources/service";
 import { ensureDefaultLedger, listLedgers } from "@/lib/ledgers/service";
 import { findGapWarnings } from "@/lib/gap-warnings/service";
+import { listEntriesForReview } from "@/lib/entries/service";
 
 export default async function Home() {
   const session = await getSession();
@@ -18,7 +19,7 @@ export default async function Home() {
 
   const month = currentMonthKey();
   const defaultLedgerId = await ensureDefaultLedger(session.householdId);
-  const [ledgers, categories, totals, paymentSourceTotals, entries, paymentSources, gapWarnings] =
+  const [ledgers, categories, totals, paymentSourceTotals, entries, paymentSources, gapWarnings, reviewQueue] =
     await Promise.all([
       listLedgers(session.householdId),
       getCategoryMonthSummary(session.householdId, defaultLedgerId, month),
@@ -27,6 +28,7 @@ export default async function Home() {
       listEntries(session.householdId, defaultLedgerId, month),
       listPaymentSources(session.householdId),
       findGapWarnings(session.householdId, defaultLedgerId, month),
+      listEntriesForReview(session.householdId),
     ]);
 
   return (
@@ -51,6 +53,9 @@ export default async function Home() {
           </Link>
           <Link href="/installment-plans" className="text-sm text-accent-dark hover:underline">
             Parcelamentos
+          </Link>
+          <Link href="/review-queue" className="text-sm text-accent-dark hover:underline">
+            Revisão{reviewQueue.length > 0 ? ` (${reviewQueue.length})` : ""}
           </Link>
         </div>
         <div className="flex items-center gap-4 text-sm text-ink-soft">

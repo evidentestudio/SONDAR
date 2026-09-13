@@ -202,4 +202,20 @@ o gatilho de quando revisitar.
        a categoria certa, campo de valor vazio) e "Não me avise mais"
        (obrigatório, por categoria, persistente).
        **Pendente rodar em produção** — mesmo passo de sempre.
-    7. ⬜ Revisão em lote — não iniciada.
+    7. ✅ Revisão em lote — nova tela `/review-queue` ("Revisão" no menu,
+       com contador de pendentes) junta TODO lançamento sinalizado
+       (`needs_review`/`possible_duplicate`) de qualquer mês/orçamento
+       num só lugar — `listEntriesForReview` em
+       `src/lib/entries/service.ts`. Corrigiu uma lacuna real: até aqui
+       `review_status` nunca mudava depois de criado (nada limpava a
+       flag), então a fila só cresceria pra sempre; agora editar um
+       lançamento sinalizado limpa a flag automaticamente
+       (`updateEntry`), e "Confirmar sem alterar" (`markEntryReviewed`)
+       cobre o caso de já estar correto do jeito que está. "Salvar regra"
+       direto da lista, igual à tela de revisão pós-extração (mesma
+       lógica de `rule_type` por origem do lançamento).
+
+  **Etapa Multimodal concluída** (sub-etapas 1-7). Escopo deliberadamente
+  adiado, não esquecido: seção 2.2 (print repetido = pergunta agregada,
+  depende de period_start/period_end nunca preenchidos) e seção 2.4
+  (chave de duplicata mais rígida pra mesma origem estruturada).

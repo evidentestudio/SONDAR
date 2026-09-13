@@ -248,6 +248,12 @@ export async function updateEntry(
 
   if (sets.length === 0) return { status: "updated" };
 
+  // Editar um lançamento É a revisão (seção 5 do documento de melhorias
+  // multimodais: "revisão em lote" precisa de um jeito de tirar um
+  // lançamento da fila depois de corrigi-lo) — sem isso, review_status
+  // nunca mudava depois da criação e a fila só crescia pra sempre. Já
+  // 'confirmed' é um no-op inofensivo.
+  sets.push(`review_status = 'confirmed'`);
   sets.push(`updated_at = now()`);
   values.push(id);
   await dbForHousehold(
@@ -256,6 +262,50 @@ export async function updateEntry(
     values,
   );
   return { status: "updated" };
+}
+
+/**
+ * "Confirmar sem alterar" — pra quando o lançamento sinalizado já está
+ * correto do jeito que está (ex: possível duplicidade que na verdade eram
+ * duas compras legítimas no mesmo dia). Separado de updateEntry porque não
+ * muda nenhum outro campo.
+ */
+export async function markEntryReviewed(householdId: string, id: string): Promise<void> {
+  await dbForHousehold(
+    householdId,
+    `UPDATE financial_entries SET review_status = 'confirmed', updated_at = now()
+     WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
+    [id, householdId],
+  );
+}
+
+/**
+ * Lista TODOS os lançamentos sinalizados (needs_review/possible_duplicate)
+ * do household, de qualquer mês e qualquer orçamento — "revisão em lote"
+ * (sondar-melhorias-multimodal.md seção 5) precisa juntar tudo que ficou
+ * pendente num só lugar, porque revisar item a item espalhado pelos meses
+ * é exatamente o hábito que essa tela existe pra evitar.
+ */
+export async function listEntriesForReview(householdId: string): Promise<EntryRow[]> {
+  const { rows } = await dbForHousehold<EntryRow>(
+    householdId,
+    `SELECT
+       e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
+       e.category_id, c.name AS category_name, c.category_type AS category_type,
+       e.payment_source_id, ps.name AS payment_source_name,
+       e.review_status, e.input_method, e.amount_confidence, e.created_at,
+       e.installment_plan_id, e.installment_number, ip.total_installments,
+       e.audio_confirmed_at
+     FROM financial_entries e
+     LEFT JOIN categories c ON c.id = e.category_id
+     LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
+     LEFT JOIN installment_plans ip ON ip.id = e.installment_plan_id
+     WHERE e.household_id = $1 AND e.deleted_at IS NULL
+       AND e.review_status IN ('needs_review', 'possible_duplicate')
+     ORDER BY e.entry_date DESC, e.created_at DESC`,
+    [householdId],
+  );
+  return rows;
 }
 
 export async function deleteEntry(householdId: string, id: string): Promise<void> {
