@@ -1038,7 +1038,7 @@ function LedgerPanel({
                                 type="button"
                                 onClick={() => startSplitEntry(entry)}
                                 title="Dividir em categorias"
-                                className="min-h-8 min-w-8 rounded px-2 text-ink-soft opacity-0 group-hover:opacity-100"
+                                className="min-h-8 min-w-8 rounded px-2 text-ink-soft"
                               >
                                 ✂️
                               </button>
@@ -1047,7 +1047,7 @@ function LedgerPanel({
                               type="button"
                               onClick={() => startEditEntry(entry)}
                               title="Editar"
-                              className="min-h-8 min-w-8 rounded px-2 text-ink-soft opacity-0 group-hover:opacity-100"
+                              className="min-h-8 min-w-8 rounded px-2 text-ink-soft"
                             >
                               ✎
                             </button>
