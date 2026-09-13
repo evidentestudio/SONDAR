@@ -100,7 +100,23 @@ o gatilho de quando revisitar.
   - 🟡 Multi-Família — inserida antes da Etapa 5 por decisão do usuário
     (também não prevista neste documento original): cadastro/multi-tenant/
     RLS concluídos, LGPD em andamento (ver seção acima).
-  - ⬜ Etapa 5 (Divisão de lançamento em N categorias) — não iniciada.
+  - ✅ Etapa 5 (Divisão de lançamento em N categorias) — concluída
+    (2026-09). Uma divisão vira N lançamentos reais em `financial_entries`,
+    cada um com sua própria categoria/valor, ligados por
+    `split_group_id` (`db/011_entry_splits.sql`) — nenhum relatório
+    precisou mudar, cada parte já soma certo na categoria dela sozinha.
+    `splitEntry` (`src/lib/entries/service.ts`) cobre o lançamento já
+    salvo: "+ mais uma parte"/"remover parte" reabrem o grupo e o total a
+    preservar é sempre a soma atual do grupo (nunca uma linha isolada);
+    colapsar pra 1 parte volta a ser lançamento normal; nunca divide
+    receita nem parcela de parcelamento. Dividir na tela de revisão
+    (antes de salvar) usa uma chave de correlação do cliente
+    (`splitGroupKey`) que o `save-batch` converte no `split_group_id`
+    real — `validateSplitGroupTotals`
+    (`src/lib/entries/split-validation.ts`, sem dependência de banco,
+    usada nas duas telas) trava tudo-ou-nada se a soma não fechar com o
+    valor original, exatamente o teste automatizado pedido pelo roteiro.
+    **Pendente rodar em produção** — mesmo passo de sempre.
   - ⬜ Etapa 6 (Painéis e relatórios, radar financeiro, sugestão por IA) —
     não iniciada.
   - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar

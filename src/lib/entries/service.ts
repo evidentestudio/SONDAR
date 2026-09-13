@@ -29,6 +29,10 @@ export type EntryRow = {
    * com uma fatura/texto pela hierarquia de fontes (reconcileEntry, seção
    * 2.3) — null caso contrário. Ver db/009_audio_confirmation.sql. */
   audio_confirmed_at: string | null;
+  /** Lançamentos com o mesmo split_group_id são as N partes de uma única
+   * compra dividida em categorias diferentes (Etapa 5) — null quando o
+   * lançamento não foi dividido. Ver db/011_entry_splits.sql. */
+  split_group_id: string | null;
 };
 
 export async function listEntries(
@@ -55,7 +59,7 @@ export async function listEntries(
        e.payment_source_id, ps.name AS payment_source_name,
        e.review_status, e.input_method, e.amount_confidence, e.created_at,
        e.installment_plan_id, e.installment_number, ip.total_installments,
-       e.audio_confirmed_at
+       e.audio_confirmed_at, e.split_group_id
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
@@ -93,6 +97,10 @@ export type CreateEntryInput = {
    * the only caller that should ever pass these. */
   installmentPlanId?: string | null;
   installmentNumber?: number | null;
+  /** Set only by save-batch quando a pessoa dividiu um item em N categorias
+   * ANTES de salvar, na tela de revisão (Etapa 5) — todas as partes de uma
+   * mesma divisão compartilham o mesmo split_group_id. */
+  splitGroupId?: string | null;
 };
 
 export type CreateEntryResult =
@@ -145,8 +153,8 @@ export async function createEntry(
   const { rows } = await dbForHousehold<{ id: string }>(
     householdId,
     `INSERT INTO financial_entries
-       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, amount_confidence, created_by, installment_plan_id, installment_number)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id, payment_source_id, input_method, review_status, amount_confidence, created_by, installment_plan_id, installment_number, split_group_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      RETURNING id`,
     [
       householdId,
@@ -163,6 +171,7 @@ export async function createEntry(
       input.createdBy ?? null,
       input.installmentPlanId ?? null,
       input.installmentNumber ?? null,
+      input.splitGroupId ?? null,
     ],
   );
   return { status: "created", entry: rows[0] };
@@ -295,7 +304,7 @@ export async function listEntriesForReview(householdId: string): Promise<EntryRo
        e.payment_source_id, ps.name AS payment_source_name,
        e.review_status, e.input_method, e.amount_confidence, e.created_at,
        e.installment_plan_id, e.installment_number, ip.total_installments,
-       e.audio_confirmed_at
+       e.audio_confirmed_at, e.split_group_id
      FROM financial_entries e
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
@@ -423,4 +432,139 @@ export async function checkPossibleDuplicate(
     [householdId, categoryId, amount, entryDate, excludeEntryId ?? null],
   );
   return rows.length > 0;
+}
+
+export type SplitPart = { categoryId: string | null; amount: number };
+
+export type SplitEntryResult =
+  | { status: "split"; entryIds: string[] }
+  | { status: "error"; message: string };
+
+/**
+ * Etapa 5 (sondar-etapas-implementacao.md): divide um lançamento em N
+ * categorias. Cada parte vira sua própria linha em financial_entries,
+ * marcadas com o mesmo split_group_id — reaproveita o resto do sistema
+ * (relatórios, orçamento por categoria) sem precisar entender o conceito
+ * de "grupo", cada parte já soma certo sozinha.
+ *
+ * O "total a preservar" nunca é o valor de uma única linha: se o
+ * lançamento já fazia parte de um grupo (edição de uma divisão existente —
+ * "+ mais uma parte"/"remover parte"), é a soma de TODAS as partes atuais
+ * do grupo. Isso é o que garante que editar uma divisão não perde o valor
+ * das outras partes. As linhas antigas (1 ou N) são substituídas por N
+ * novas linhas numa única instrução (delete + insert via CTE), então nunca
+ * existe um estado intermediário sem o dinheiro contabilizado em algum
+ * lugar.
+ */
+export async function splitEntry(
+  householdId: string,
+  entryId: string,
+  parts: SplitPart[],
+): Promise<SplitEntryResult> {
+  if (parts.length === 0) return { status: "error", message: "Informe ao menos uma parte." };
+  for (const part of parts) {
+    if (!Number.isFinite(part.amount) || part.amount <= 0) {
+      return { status: "error", message: "Cada parte precisa de um valor maior que zero." };
+    }
+  }
+
+  const { rows: existingRows } = await dbForHousehold<{
+    id: string;
+    ledger_id: string;
+    entry_type: EntryType;
+    entry_date: string;
+    description: string;
+    payment_source_id: string | null;
+    input_method: InputMethod;
+    review_status: ReviewStatus;
+    amount_confidence: AmountConfidence;
+    created_by: string | null;
+    installment_plan_id: string | null;
+    split_group_id: string | null;
+    amount: string;
+  }>(
+    householdId,
+    `SELECT id, ledger_id, entry_type, entry_date, description, payment_source_id, input_method,
+            review_status, amount_confidence, created_by, installment_plan_id, split_group_id, amount
+     FROM financial_entries WHERE id = $1 AND household_id = $2 AND deleted_at IS NULL`,
+    [entryId, householdId],
+  );
+  const existing = existingRows[0];
+  if (!existing) return { status: "error", message: "Lançamento não encontrado." };
+  if (existing.entry_type !== "expense") {
+    return { status: "error", message: "Só é possível dividir uma despesa, não uma receita." };
+  }
+  if (existing.installment_plan_id) {
+    return { status: "error", message: "Não é possível dividir uma parcela de parcelamento." };
+  }
+
+  let siblingIds = [existing.id];
+  let total = Number(existing.amount);
+  if (existing.split_group_id) {
+    const { rows: siblings } = await dbForHousehold<{ id: string; amount: string }>(
+      householdId,
+      `SELECT id, amount FROM financial_entries
+       WHERE household_id = $1 AND split_group_id = $2 AND deleted_at IS NULL`,
+      [householdId, existing.split_group_id],
+    );
+    siblingIds = siblings.map((s) => s.id);
+    total = siblings.reduce((sum, s) => sum + Number(s.amount), 0);
+  }
+
+  const partsSum = parts.reduce((sum, p) => sum + p.amount, 0);
+  if (Math.abs(partsSum - total) > 0.005) {
+    return {
+      status: "error",
+      message: `A soma das partes (${partsSum.toFixed(2)}) precisa ser igual ao valor original (${total.toFixed(2)}).`,
+    };
+  }
+
+  const awaitingReviewId = await ensureAwaitingReviewCategory(householdId, existing.ledger_id);
+  const categoryIds: string[] = [];
+  for (const part of parts) {
+    const categoryId = part.categoryId ?? awaitingReviewId;
+    if (!(await isLeafCategory(householdId, existing.ledger_id, categoryId))) {
+      return { status: "error", message: "Categoria inválida — escolha uma categoria-folha deste orçamento." };
+    }
+    categoryIds.push(categoryId);
+  }
+
+  // Grupo de 1 não é mais uma divisão — volta a ser um lançamento normal.
+  const newSplitGroupId = parts.length > 1 ? crypto.randomUUID() : null;
+  const amounts = parts.map((p) => p.amount);
+
+  const { rows } = await dbForHousehold<{ id: string }>(
+    householdId,
+    `WITH deleted AS (
+       UPDATE financial_entries SET deleted_at = now(), updated_at = now()
+       WHERE household_id = $1 AND id = ANY($2::uuid[])
+       RETURNING id
+     )
+     INSERT INTO financial_entries
+       (household_id, ledger_id, entry_type, entry_date, description, amount, category_id,
+        payment_source_id, input_method, review_status, amount_confidence, created_by, split_group_id)
+     SELECT $1, $3, $4, $5, $6, x.amount, x.category_id,
+            $7, $8, $9, $10, $11, $12
+     FROM unnest($13::numeric[], $14::uuid[]) AS x(amount, category_id)
+     RETURNING id`,
+    [
+      householdId,
+      siblingIds,
+      existing.ledger_id,
+      existing.entry_type,
+      existing.entry_date,
+      existing.description,
+      existing.payment_source_id,
+      existing.input_method,
+      // Dividir É revisar — a pessoa está ativamente decidindo a categoria
+      // de cada parte, então cada parte já sai confirmada.
+      "confirmed",
+      existing.amount_confidence,
+      existing.created_by,
+      newSplitGroupId,
+      amounts,
+      categoryIds,
+    ],
+  );
+  return { status: "split", entryIds: rows.map((r) => r.id) };
 }

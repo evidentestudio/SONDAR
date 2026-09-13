@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createEntry, checkPossibleDuplicate, findReconciliationCandidate, reconcileEntry } from "@/lib/entries/service";
 import type { InputMethod, AmountConfidence, ReviewStatus } from "@/lib/entries/service";
+import { validateSplitGroupTotals } from "@/lib/entries/split-validation";
 import { createInstallmentPlan } from "@/lib/installment-plans/service";
 import { resolveLedgerId } from "@/lib/ledgers/service";
 
@@ -20,6 +21,16 @@ type BatchItem = {
    * lançamentos separados em vez de fundir com um rascunho de áudio
    * pendente (ver review-modal.tsx) — pula a conciliação pra esse item. */
   skipReconciliation?: boolean;
+  /** Presente quando a pessoa dividiu esse item em N categorias na tela de
+   * revisão, ANTES de salvar (Etapa 5) — uma chave de correlação do
+   * cliente (não é o split_group_id real), igual em todas as partes da
+   * mesma divisão. Todo item com essa chave vira uma linha própria, todas
+   * recebendo o MESMO split_group_id real gerado aqui no servidor. */
+  splitGroupKey?: string | null;
+  /** Valor original travado no momento em que a divisão começou (o mesmo
+   * em toda parte do grupo) — o que validateSplitGroupTotals confere
+   * contra a soma real das partes antes de gravar qualquer coisa. */
+  splitGroupTotal?: number | null;
 };
 
 export async function POST(request: Request) {
@@ -35,8 +46,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Nenhum lançamento para salvar." }, { status: 400 });
   }
 
+  // Nunca grava nada de um lote com uma divisão que não fecha — tudo ou
+  // nada, em vez de arriscar salvar algumas partes e não outras.
+  const splitValidation = validateSplitGroupTotals(items);
+  if (!splitValidation.ok) {
+    return NextResponse.json({ error: splitValidation.message }, { status: 400 });
+  }
+
   let created = 0;
   const errors: { index: number; message: string }[] = [];
+  // Uma divisão em N categorias (Etapa 5) manda N itens com a mesma
+  // splitGroupKey (uma chave qualquer do cliente) — todos precisam do MESMO
+  // split_group_id real, gerado aqui na primeira vez que a chave aparece.
+  const splitGroupIds = new Map<string, string>();
 
   for (const [index, item] of items.entries()) {
     // Each row carries its own orçamento — defaults to "Principal", but the
@@ -49,13 +71,21 @@ export async function POST(request: Request) {
         ? "possible_duplicate"
         : "confirmed";
 
+    let splitGroupId: string | null = null;
+    if (item.splitGroupKey) {
+      splitGroupId = splitGroupIds.get(item.splitGroupKey) ?? crypto.randomUUID();
+      splitGroupIds.set(item.splitGroupKey, splitGroupId);
+    }
+
     // Hierarquia de fontes (sondar-melhorias-multimodal.md seção 2.3): a
     // fatura/texto é a verdade, o áudio é estimativa. Refeita aqui contra o
     // estado real do banco no momento de salvar (o preview em pipeline.ts
-    // não é vinculante) — parcelamento nunca concilia, e a própria pessoa
-    // pode ter pedido pra manter os dois lançamentos separados.
+    // não é vinculante) — parcelamento nunca concilia, a própria pessoa
+    // pode ter pedido pra manter os dois lançamentos separados, e uma parte
+    // de uma divisão nunca concilia sozinha (o valor já não é mais o total
+    // original que um rascunho de áudio poderia reconhecer).
     const isInstallment = !!item.installmentTotal && item.installmentTotal > 1;
-    if (sourceType !== "ai_audio" && !isInstallment && !item.skipReconciliation) {
+    if (sourceType !== "ai_audio" && !isInstallment && !item.skipReconciliation && !splitGroupId) {
       const reconciliation = await findReconciliationCandidate(session.householdId, ledgerId, {
         entryDate: item.date,
         amount: item.amount,
@@ -109,6 +139,7 @@ export async function POST(request: Request) {
             inputMethod: sourceType,
             reviewStatus,
             amountConfidence: (item.approximate ? "approximate" : "exact") as AmountConfidence,
+            splitGroupId,
           });
 
     if (result.status === "error") {

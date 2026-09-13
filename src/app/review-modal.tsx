@@ -6,6 +6,7 @@ import type { LedgerRow } from "@/lib/ledgers/service";
 import type { CategoryNode } from "@/lib/categories/service";
 import { formatBRL, parseBRLAmount, toAmountInputValue } from "@/lib/format";
 import { fetchLedgerCategoryTree, flattenLeaves } from "@/lib/client/ledger-categories";
+import { validateSplitGroupTotals } from "@/lib/entries/split-validation";
 
 type SourceType = "image" | "text" | "audio";
 
@@ -47,6 +48,13 @@ type DraftRow = {
    * whether "Salvar regra" should be disabled (matches) or re-enabled
    * (user picked a different category since). */
   ruleSavedForCategoryId: string | null;
+  /** Etapa 5 — dividir em N categorias ANTES de salvar. null/undefined ou
+   * um único item = linha normal (usa categoryId/amount de cima). 2+ itens
+   * = a linha vira N lançamentos no save-batch, todos com a mesma
+   * splitGroupKey (o próprio row.key), cada um com sua fatia. O total a
+   * preservar é sempre row.amount, travado no momento em que a divisão
+   * começa (nunca recalculado a partir das partes em edição). */
+  splitParts: { key: string; categoryId: string; amount: string }[] | null;
 };
 
 function formatShortDate(isoDate: string): string {
@@ -225,6 +233,7 @@ export function ReviewModal({
             reconcileEntryAmount: item.reconcileEntryAmount ?? null,
             reconciliationAmbiguous: item.reconciliationAmbiguous === true,
             skipReconciliation: false,
+            splitParts: null,
           }),
         ),
       );
@@ -241,6 +250,59 @@ export function ReviewModal({
 
   function removeRow(key: string) {
     setRows((prev) => (prev ? prev.filter((r) => r.key !== key) : prev));
+  }
+
+  // Etapa 5 — dividir um item em N categorias antes de salvar. O total a
+  // preservar é sempre o valor da linha (row.amount), travado no momento
+  // em que a divisão começa.
+  function toggleSplit(row: DraftRow) {
+    updateRow(row.key, {
+      splitParts: row.splitParts
+        ? null
+        : [{ key: `${row.key}-1`, categoryId: row.categoryId, amount: row.amount }],
+    });
+  }
+
+  function addSplitPart(rowKey: string) {
+    setRows((prev) =>
+      prev
+        ? prev.map((r) =>
+            r.key === rowKey && r.splitParts
+              ? {
+                  ...r,
+                  splitParts: [
+                    ...r.splitParts,
+                    { key: `${rowKey}-${r.splitParts.length + 1}-${Date.now()}`, categoryId: "", amount: "" },
+                  ],
+                }
+              : r,
+          )
+        : prev,
+    );
+  }
+
+  function removeSplitPart(rowKey: string, partKey: string) {
+    setRows((prev) =>
+      prev
+        ? prev.map((r) =>
+            r.key === rowKey && r.splitParts && r.splitParts.length > 1
+              ? { ...r, splitParts: r.splitParts.filter((p) => p.key !== partKey) }
+              : r,
+          )
+        : prev,
+    );
+  }
+
+  function updateSplitPart(rowKey: string, partKey: string, patch: Partial<{ categoryId: string; amount: string }>) {
+    setRows((prev) =>
+      prev
+        ? prev.map((r) =>
+            r.key === rowKey && r.splitParts
+              ? { ...r, splitParts: r.splitParts.map((p) => (p.key === partKey ? { ...p, ...patch } : p)) }
+              : r,
+          )
+        : prev,
+    );
   }
 
   async function ensureTree(ledgerId: string, forceRefresh = false): Promise<CategoryNode[]> {
@@ -348,12 +410,46 @@ export function ReviewModal({
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch("/api/ai/save-batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceType,
-          items: rows.map((r) => ({
+      // Uma linha dividida em N categorias (Etapa 5) vira N itens no
+      // lote, todos com a mesma splitGroupKey (a própria key da linha) e
+      // o mesmo splitGroupTotal (o valor original a preservar) — uma
+      // linha normal continua sendo 1 item, como sempre.
+      type BatchItemPayload = {
+        date: string;
+        description: string;
+        amount: number;
+        ledgerId: string;
+        categoryId: string | null;
+        paymentSourceId: string | null;
+        needsReview: boolean;
+        installmentCurrent: number | null;
+        installmentTotal: number | null;
+        approximate: boolean;
+        skipReconciliation: boolean;
+        splitGroupKey: string | null;
+        splitGroupTotal: number | null;
+      };
+      const items: BatchItemPayload[] = rows.flatMap((r): BatchItemPayload[] => {
+        if (r.splitParts && r.splitParts.length > 1) {
+          const total = parseBRLAmount(r.amount);
+          return r.splitParts.map((p) => ({
+            date: r.date,
+            description: r.description,
+            amount: parseBRLAmount(p.amount),
+            ledgerId: r.ledgerId,
+            categoryId: p.categoryId || null,
+            paymentSourceId: r.paymentSourceId || null,
+            needsReview: r.needsReview,
+            installmentCurrent: null,
+            installmentTotal: null,
+            approximate: r.approximate,
+            skipReconciliation: true,
+            splitGroupKey: r.key,
+            splitGroupTotal: total,
+          }));
+        }
+        return [
+          {
             date: r.date,
             description: r.description,
             amount: parseBRLAmount(r.amount),
@@ -365,8 +461,22 @@ export function ReviewModal({
             installmentTotal: r.installmentTotal,
             approximate: r.approximate,
             skipReconciliation: r.skipReconciliation,
-          })),
-        }),
+            splitGroupKey: null,
+            splitGroupTotal: null,
+          },
+        ];
+      });
+
+      const validation = validateSplitGroupTotals(items);
+      if (!validation.ok) {
+        setError(validation.message);
+        return;
+      }
+
+      const res = await fetch("/api/ai/save-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceType, items }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -668,21 +778,23 @@ export function ReviewModal({
                         </select>
                       </label>
                     )}
-                    <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
-                      Categoria
-                      <select
-                        value={row.categoryId}
-                        onChange={(e) => updateRow(row.key, { categoryId: e.target.value })}
-                        className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
-                      >
-                        <option value="">Aguardando Revisão</option>
-                        {rowLeaves.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {!row.splitParts && (
+                      <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
+                        Categoria
+                        <select
+                          value={row.categoryId}
+                          onChange={(e) => updateRow(row.key, { categoryId: e.target.value })}
+                          className="min-h-11 rounded-lg border border-border-strong px-2 text-sm"
+                        >
+                          <option value="">Aguardando Revisão</option>
+                          {rowLeaves.map((l) => (
+                            <option key={l.id} value={l.id}>
+                              {l.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
                       Forma de pagamento
                       <select
@@ -698,42 +810,55 @@ export function ReviewModal({
                         ))}
                       </select>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setNewCategoryForm({
-                          rowKey: row.key,
-                          ledgerId: row.ledgerId,
-                          name: "",
-                          parentId: "",
-                          createNewParent: false,
-                          newParentName: "",
-                          error: null,
-                          saving: false,
-                        })
-                      }
-                      className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
-                    >
-                      + Nova categoria
-                    </button>
-                    <button
-                      type="button"
-                      disabled={row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId}
-                      onClick={() =>
-                        setRuleForm({
-                          rowKey: row.key,
-                          pattern: suggestPattern(row.description),
-                          ledgerId: row.ledgerId,
-                          categoryId: row.categoryId || rowLeaves[0]?.id || "",
-                          isAmbiguous: false,
-                        })
-                      }
-                      className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId
-                        ? "Regra salva ✓"
-                        : "Salvar regra"}
-                    </button>
+                    {!row.splitParts && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNewCategoryForm({
+                            rowKey: row.key,
+                            ledgerId: row.ledgerId,
+                            name: "",
+                            parentId: "",
+                            createNewParent: false,
+                            newParentName: "",
+                            error: null,
+                            saving: false,
+                          })
+                        }
+                        className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                      >
+                        + Nova categoria
+                      </button>
+                    )}
+                    {!row.splitParts && (
+                      <button
+                        type="button"
+                        disabled={row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId}
+                        onClick={() =>
+                          setRuleForm({
+                            rowKey: row.key,
+                            pattern: suggestPattern(row.description),
+                            ledgerId: row.ledgerId,
+                            categoryId: row.categoryId || rowLeaves[0]?.id || "",
+                            isAmbiguous: false,
+                          })
+                        }
+                        className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {row.ruleSavedForCategoryId !== null && row.ruleSavedForCategoryId === row.categoryId
+                          ? "Regra salva ✓"
+                          : "Salvar regra"}
+                      </button>
+                    )}
+                    {!row.installmentTotal && (
+                      <button
+                        type="button"
+                        onClick={() => toggleSplit(row)}
+                        className="min-h-11 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                      >
+                        {row.splitParts ? "Cancelar divisão" : "Dividir em categorias"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeRow(row.key)}
@@ -742,6 +867,66 @@ export function ReviewModal({
                       Remover
                     </button>
                   </div>
+
+                  {row.splitParts && (
+                    <div className="mt-2 flex flex-col gap-2 rounded-lg bg-accent-light p-2">
+                      {row.splitParts.map((part) => (
+                        <div key={part.key} className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={part.categoryId}
+                            onChange={(e) => updateSplitPart(row.key, part.key, { categoryId: e.target.value })}
+                            className="min-h-9 min-w-40 flex-1 rounded border border-border-strong px-1 text-sm"
+                          >
+                            <option value="">Aguardando Revisão</option>
+                            {rowLeaves.map((l) => (
+                              <option key={l.id} value={l.id}>
+                                {l.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={part.amount}
+                            onChange={(e) => updateSplitPart(row.key, part.key, { amount: e.target.value })}
+                            className="money min-h-9 w-24 rounded border border-border-strong px-1 text-right text-sm"
+                          />
+                          <button
+                            type="button"
+                            disabled={row.splitParts!.length <= 1}
+                            onClick={() => removeSplitPart(row.key, part.key)}
+                            title="Remover parte"
+                            className="min-h-8 min-w-8 rounded px-2 text-rust disabled:opacity-30"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      {(() => {
+                        const total = parseBRLAmount(row.amount);
+                        const allocated = row.splitParts.reduce((s, p) => s + (parseBRLAmount(p.amount) || 0), 0);
+                        const remaining = total - allocated;
+                        const isBalanced = Math.abs(remaining) < 0.005;
+                        return (
+                          <div className="flex flex-wrap items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => addSplitPart(row.key)}
+                              className="min-h-9 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                            >
+                              + mais uma parte
+                            </button>
+                            <span
+                              className="money text-sm"
+                              style={{ color: isBalanced ? "var(--status-green)" : "var(--status-red)" }}
+                            >
+                              Restante a alocar: {formatBRL(remaining)}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   {newCategoryForm?.rowKey === row.key && (
                     <div className="mt-2 flex flex-col gap-2 rounded-lg bg-accent-light p-2">
@@ -894,7 +1079,15 @@ export function ReviewModal({
               </button>
               <button
                 type="button"
-                disabled={saving}
+                disabled={
+                  saving ||
+                  rows.some((r) => {
+                    if (!r.splitParts) return false;
+                    const allocated = r.splitParts.reduce((s, p) => s + (parseBRLAmount(p.amount) || 0), 0);
+                    return Math.abs(parseBRLAmount(r.amount) - allocated) > 0.005;
+                  })
+                }
+                title="Alguma divisão ainda não fecha com o valor original"
                 onClick={saveAll}
                 className="min-h-11 rounded-lg bg-accent px-5 text-sm font-medium text-white disabled:opacity-50"
               >

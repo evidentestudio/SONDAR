@@ -226,6 +226,20 @@ function LedgerPanel({
     ledgerId: string;
     leaves: LeafOption[];
   } | null>(null);
+  // Etapa 5 — dividir um lançamento salvo em N categorias. As partes de uma
+  // divisão são apenas lançamentos normais com o mesmo split_group_id, já
+  // presentes em `entries` (mesmo mês/orçamento) — não precisa buscar nada
+  // novo pra reabrir uma divisão existente e continuar editando.
+  const [splittingEntry, setSplittingEntry] = useState<{
+    id: string;
+    /** Soma original a preservar — travada no momento em que a divisão
+     * começa, nunca recalculada a partir das partes em edição (senão
+     * "restante a alocar" perderia o valor de referência conforme a
+     * pessoa mexe nos campos). */
+    total: number;
+    parts: { key: string; categoryId: string; amount: string }[];
+  } | null>(null);
+  const [splitError, setSplitError] = useState<string | null>(null);
   const skipNextLoad = useRef(!!initialData);
 
   const leaves = flattenLeafCategories(categories);
@@ -441,6 +455,66 @@ function LedgerPanel({
       return;
     }
     setEditingEntry(null);
+    await Promise.all([loadSummary(month), loadEntries(month)]);
+  }
+
+  function startSplitEntry(entry: EntryRow) {
+    setSplitError(null);
+    // Reabrir uma divisão já existente parte das partes atuais (todas já
+    // carregadas em `entries`); um lançamento ainda não dividido parte de
+    // uma única parte com a categoria/valor de hoje.
+    const groupRows = entry.split_group_id
+      ? entries.filter((e) => e.split_group_id === entry.split_group_id)
+      : [entry];
+    setSplittingEntry({
+      id: entry.id,
+      total: groupRows.reduce((sum, r) => sum + Number(r.amount), 0),
+      parts: groupRows.map((r) => ({
+        key: r.id,
+        categoryId: r.category_id ?? "",
+        amount: toAmountInputValue(Number(r.amount)),
+      })),
+    });
+  }
+
+  function addSplitPart() {
+    setSplittingEntry((prev) =>
+      prev
+        ? { ...prev, parts: [...prev.parts, { key: `new-${Date.now()}-${prev.parts.length}`, categoryId: "", amount: "" }] }
+        : prev,
+    );
+  }
+
+  function removeSplitPart(key: string) {
+    setSplittingEntry((prev) =>
+      prev && prev.parts.length > 1 ? { ...prev, parts: prev.parts.filter((p) => p.key !== key) } : prev,
+    );
+  }
+
+  function updateSplitPart(key: string, patch: Partial<{ categoryId: string; amount: string }>) {
+    setSplittingEntry((prev) =>
+      prev ? { ...prev, parts: prev.parts.map((p) => (p.key === key ? { ...p, ...patch } : p)) } : prev,
+    );
+  }
+
+  async function submitSplit() {
+    if (!splittingEntry) return;
+    setSplitError(null);
+    const parts = splittingEntry.parts.map((p) => ({
+      categoryId: p.categoryId || null,
+      amount: parseBRLAmount(p.amount),
+    }));
+    const res = await fetch(`/api/entries/${splittingEntry.id}/split`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parts }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setSplitError(data.error ?? "Não foi possível dividir o lançamento.");
+      return;
+    }
+    setSplittingEntry(null);
     await Promise.all([loadSummary(month), loadEntries(month)]);
   }
 
@@ -722,7 +796,90 @@ function LedgerPanel({
                   </thead>
                   <tbody>
                     {filteredEntries.map((entry) =>
-                      editingEntry?.id === entry.id ? (
+                      splittingEntry?.id === entry.id ? (
+                        <tr key={entry.id} className="border-t border-border bg-[#FBFAF6]">
+                          <td colSpan={6} className="py-3">
+                            <div className="flex flex-col gap-2">
+                              <p className="text-xs font-medium uppercase tracking-wide text-muted">
+                                Dividir &ldquo;{entry.description}&rdquo; em categorias
+                              </p>
+                              {splitError && <p className="text-sm text-rust">{splitError}</p>}
+                              {splittingEntry.parts.map((part) => (
+                                <div key={part.key} className="flex flex-wrap items-center gap-2">
+                                  <select
+                                    value={part.categoryId}
+                                    onChange={(e) => updateSplitPart(part.key, { categoryId: e.target.value })}
+                                    className="min-h-9 min-w-40 flex-1 rounded border border-border-strong px-1 text-sm"
+                                  >
+                                    <option value="">Aguardando Revisão</option>
+                                    {leaves.map((l) => (
+                                      <option key={l.id} value={l.id}>
+                                        {l.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={part.amount}
+                                    onChange={(e) => updateSplitPart(part.key, { amount: e.target.value })}
+                                    className="money min-h-9 w-24 rounded border border-border-strong px-1 text-right text-sm"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={splittingEntry.parts.length <= 1}
+                                    onClick={() => removeSplitPart(part.key)}
+                                    title="Remover parte"
+                                    className="min-h-8 min-w-8 rounded px-2 text-rust disabled:opacity-30"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                              {(() => {
+                                const allocated = splittingEntry.parts.reduce(
+                                  (s, p) => s + (parseBRLAmount(p.amount) || 0),
+                                  0,
+                                );
+                                const remaining = splittingEntry.total - allocated;
+                                const isBalanced = Math.abs(remaining) < 0.005;
+                                return (
+                                  <div className="flex flex-wrap items-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={addSplitPart}
+                                      className="min-h-9 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+                                    >
+                                      + mais uma parte
+                                    </button>
+                                    <span
+                                      className="money text-sm"
+                                      style={{ color: isBalanced ? "var(--status-green)" : "var(--status-red)" }}
+                                    >
+                                      Restante a alocar: {formatBRL(remaining)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={submitSplit}
+                                      disabled={!isBalanced}
+                                      className="min-h-9 rounded-lg bg-accent px-3 text-sm font-medium text-white disabled:opacity-50"
+                                    >
+                                      Salvar divisão
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSplittingEntry(null)}
+                                      className="min-h-9 rounded-lg px-3 text-sm text-muted"
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : editingEntry?.id === entry.id ? (
                         <tr key={entry.id} className="border-t border-border bg-[#FBFAF6]">
                           <td className="py-2 pr-2">
                             <input
@@ -848,6 +1005,14 @@ function LedgerPanel({
                                 🔄
                               </span>
                             )}
+                            {entry.split_group_id && (
+                              <span
+                                className="ml-1 text-xs text-muted"
+                                title="Parte de um lançamento dividido em categorias"
+                              >
+                                ✂️
+                              </span>
+                            )}
                           </td>
                           <td
                             className="py-2"
@@ -868,6 +1033,16 @@ function LedgerPanel({
                             {formatBRL(Number(entry.amount))}
                           </td>
                           <td className="py-2 text-right whitespace-nowrap">
+                            {entry.entry_type === "expense" && !entry.installment_plan_id && (
+                              <button
+                                type="button"
+                                onClick={() => startSplitEntry(entry)}
+                                title="Dividir em categorias"
+                                className="min-h-8 min-w-8 rounded px-2 text-ink-soft opacity-0 group-hover:opacity-100"
+                              >
+                                ✂️
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => startEditEntry(entry)}
