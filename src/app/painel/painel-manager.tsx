@@ -1,27 +1,76 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { CategorySummaryNode } from "@/lib/budget-summary/service";
 import type { EntryRow } from "@/lib/entries/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
 import type { DashboardFilterRow } from "@/lib/dashboard-filters/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
 import { formatBRL } from "@/lib/format";
+import { normalizeStr } from "@/lib/text/normalize";
 
 type LeafRow = {
   key: string;
   categoryId: string;
   label: string;
   color: string | null;
+  icon: string | null;
   gasto: number;
   orcado: number;
 };
+
+// Ícone por palavra-chave no nome — categorias não têm um seletor de ícone
+// na UI ainda (o campo existe no banco, mas fica null na prática), então
+// isso é só um fallback visual pra não deixar todo círculo igual; usa o
+// ícone de verdade da categoria (c.icon) quando ele existir.
+const ICON_KEYWORDS: [string, string][] = [
+  ["mercado", "🛒"],
+  ["rancho", "🛒"],
+  ["supermercado", "🛒"],
+  ["feira", "🛒"],
+  ["acougue", "🛒"],
+  ["combustivel", "⛽"],
+  ["gasolina", "⛽"],
+  ["estacionamento", "🅿️"],
+  ["comer fora", "🍴"],
+  ["restaurante", "🍴"],
+  ["lazer", "🎭"],
+  ["assinatura", "💳"],
+  ["saude", "❤️"],
+  ["farmacia", "❤️"],
+  ["transporte", "🚌"],
+  ["uber", "🚌"],
+  ["negocio", "💼"],
+  ["empreendimento", "💼"],
+  ["carro", "🚗"],
+  ["agua", "💧"],
+  ["casa", "🏠"],
+  ["educacao", "📚"],
+  ["escola", "📚"],
+  ["revisao", "🔎"],
+];
+
+function fallbackIcon(label: string): string {
+  const norm = normalizeStr(label);
+  for (const [keyword, icon] of ICON_KEYWORDS) {
+    if (norm.includes(keyword)) return icon;
+  }
+  return "📁";
+}
 
 function flattenPanelRows(nodes: CategorySummaryNode[]): LeafRow[] {
   const rows: LeafRow[] = [];
   for (const node of nodes) {
     if (node.children.length === 0) {
-      rows.push({ key: node.id, categoryId: node.id, label: node.name, color: node.color, gasto: node.gasto, orcado: node.orcado });
+      rows.push({
+        key: node.id,
+        categoryId: node.id,
+        label: node.name,
+        color: node.color,
+        icon: node.icon,
+        gasto: node.gasto,
+        orcado: node.orcado,
+      });
       continue;
     }
     for (const child of node.children) {
@@ -30,6 +79,7 @@ function flattenPanelRows(nodes: CategorySummaryNode[]): LeafRow[] {
         categoryId: child.id,
         label: `${node.name} — ${child.name}`,
         color: child.color ?? node.color,
+        icon: child.icon ?? node.icon,
         gasto: child.gasto,
         orcado: child.orcado,
       });
@@ -42,6 +92,7 @@ function flattenPanelRows(nodes: CategorySummaryNode[]): LeafRow[] {
         categoryId: node.id,
         label: `${node.name} — sem subcategoria`,
         color: node.color,
+        icon: node.icon,
         gasto: node.direct.gasto,
         orcado: node.direct.orcado,
       });
@@ -50,8 +101,15 @@ function flattenPanelRows(nodes: CategorySummaryNode[]): LeafRow[] {
   return rows;
 }
 
+/** Sem orçado, qualquer gasto já é "estourado" — nunca fica cinza só porque
+ * ninguém orçou aquela categoria ainda. */
+function progressPct(gasto: number, orcado: number): number {
+  if (orcado <= 0) return gasto > 0 ? 100 : 0;
+  return Math.min((gasto / orcado) * 100, 100);
+}
+
 function statusColor(gasto: number, orcado: number): string {
-  if (orcado <= 0) return "var(--muted)";
+  if (orcado <= 0) return gasto > 0 ? "var(--status-red)" : "var(--muted)";
   const pct = gasto / orcado;
   if (pct >= 1) return "var(--status-red)";
   if (pct >= 0.7) return "var(--status-yellow)";
@@ -333,63 +391,101 @@ export function PainelManager({
         {visibleRows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhuma categoria neste filtro.</p>
         ) : (
-          <div className="flex flex-col gap-3">
-            {visibleRows.map((row) => {
-              const restante = row.orcado - row.gasto;
-              const pct = row.orcado > 0 ? Math.min((row.gasto / row.orcado) * 100, 100) : row.gasto > 0 ? 100 : 0;
-              const color = statusColor(row.gasto, row.orcado);
-              const categoryEntries = entries.filter((e) => e.category_id === row.categoryId);
-              return (
-                <div key={row.key} className="border-b border-border pb-3 last:border-b-0 last:pb-0">
-                  <div className="mb-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm">
-                    <span className="flex items-center gap-2 text-ink">
-                      {row.color && <span className="h-2.5 w-2.5 rounded-full" style={{ background: row.color }} aria-hidden />}
-                      {row.label}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <span className="text-muted">Orçado: {formatBRL(row.orcado)}</span>
-                      <button
-                        type="button"
-                        onClick={() => setExpandedCategoryId((prev) => (prev === row.categoryId ? null : row.categoryId))}
-                        className="money underline decoration-dotted"
-                        style={{ color }}
-                      >
-                        Gasto: {formatBRL(row.gasto)}
-                      </button>
-                      <span className={restante < 0 ? "money text-rust" : "money text-ink-soft"}>
-                        Restante: {formatBRL(restante)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-paper">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-                  </div>
-
-                  {expandedCategoryId === row.categoryId && (
-                    <div className="mt-2 rounded-lg bg-paper p-2">
-                      {categoryEntries.length === 0 ? (
-                        <p className="py-2 text-center text-xs text-muted">Nenhum lançamento nesta categoria.</p>
-                      ) : (
-                        <table className="w-full text-left text-xs">
-                          <tbody>
-                            {categoryEntries.map((e) => (
-                              <tr key={e.id} className="border-t border-border">
-                                <td className="py-1 pr-2 text-muted">
-                                  {e.entry_date.slice(0, 10).split("-").reverse().join("/")}
-                                </td>
-                                <td className="py-1 pr-2 text-ink">{e.description}</td>
-                                <td className="py-1 pr-2 text-muted">{e.payment_source_name ?? "—"}</td>
-                                <td className="money py-1 text-right text-ink">{formatBRL(Number(e.amount))}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide text-muted">
+                  <th className="pb-2">Categoria</th>
+                  <th className="pb-2 text-right">Orçado</th>
+                  <th className="pb-2 text-right">Gasto</th>
+                  <th className="pb-2 text-right">Restante</th>
+                  <th className="pb-2 pl-4">Progresso</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row) => {
+                  const restante = row.orcado - row.gasto;
+                  const pct = progressPct(row.gasto, row.orcado);
+                  const color = statusColor(row.gasto, row.orcado);
+                  const restanteNegative = restante < 0;
+                  const categoryEntries = entries.filter((e) => e.category_id === row.categoryId);
+                  const isExpanded = expandedCategoryId === row.categoryId;
+                  return (
+                    <Fragment key={row.key}>
+                      <tr className="border-t border-border">
+                        <td className="py-2 pr-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm"
+                              style={{ background: row.color ?? "var(--muted)" }}
+                              aria-hidden
+                            >
+                              {row.icon ?? fallbackIcon(row.label)}
+                            </span>
+                            <span className="text-ink">{row.label}</span>
+                          </div>
+                        </td>
+                        <td className="money py-2 text-right text-ink-soft">{formatBRL(row.orcado)}</td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCategoryId((prev) => (prev === row.categoryId ? null : row.categoryId))}
+                            className="money underline decoration-dotted"
+                            style={{ color: row.gasto === 0 ? undefined : color }}
+                          >
+                            {formatBRL(row.gasto)}
+                          </button>
+                        </td>
+                        <td className="py-2 text-right">
+                          <span
+                            className="money inline-block rounded-full px-2 py-0.5 text-xs"
+                            style={
+                              restanteNegative
+                                ? { background: "var(--row-awaiting-bg)", color: "var(--row-awaiting-text)" }
+                                : { background: "var(--row-blue-bg)", color: "var(--row-blue-text)" }
+                            }
+                          >
+                            {formatBRL(restante)}
+                          </span>
+                        </td>
+                        <td className="py-2 pl-4">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-paper">
+                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                            </div>
+                            <span className="w-10 shrink-0 text-right text-xs text-muted">{Math.round(pct)}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={5} className="bg-paper px-2 py-2">
+                            {categoryEntries.length === 0 ? (
+                              <p className="py-2 text-center text-xs text-muted">Nenhum lançamento nesta categoria.</p>
+                            ) : (
+                              <table className="w-full text-left text-xs">
+                                <tbody>
+                                  {categoryEntries.map((e) => (
+                                    <tr key={e.id} className="border-t border-border">
+                                      <td className="py-1 pr-2 text-muted">
+                                        {e.entry_date.slice(0, 10).split("-").reverse().join("/")}
+                                      </td>
+                                      <td className="py-1 pr-2 text-ink">{e.description}</td>
+                                      <td className="py-1 pr-2 text-muted">{e.payment_source_name ?? "—"}</td>
+                                      <td className="money py-1 text-right text-ink">{formatBRL(Number(e.amount))}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </td>
+                        </tr>
                       )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

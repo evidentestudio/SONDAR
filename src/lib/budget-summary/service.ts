@@ -7,6 +7,7 @@ type SummaryRow = {
   parent_id: string | null;
   name: string;
   color: string | null;
+  icon: string | null;
   category_type: CategoryType;
   gasto: string | null;
   orcado: string | null;
@@ -16,6 +17,7 @@ export type CategorySummaryNode = {
   id: string;
   name: string;
   color: string | null;
+  icon: string | null;
   categoryType: CategoryType;
   gasto: number;
   orcado: number;
@@ -45,7 +47,7 @@ export async function getCategoryMonthSummary(
   const { rows } = await dbForHousehold<SummaryRow>(
     householdId,
     `SELECT
-       c.id, c.parent_id, c.name, c.color, c.category_type,
+       c.id, c.parent_id, c.name, c.color, c.icon, c.category_type,
        e.gasto, b.amount AS orcado
      FROM categories c
      LEFT JOIN (
@@ -74,6 +76,7 @@ export async function getCategoryMonthSummary(
       id: row.id,
       name: row.name,
       color: row.color,
+      icon: row.icon,
       categoryType: row.category_type,
       parentId: row.parent_id,
       ownGasto: Number(row.gasto ?? 0),
