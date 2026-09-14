@@ -117,8 +117,26 @@ o gatilho de quando revisitar.
     usada nas duas telas) trava tudo-ou-nada se a soma não fechar com o
     valor original, exatamente o teste automatizado pedido pelo roteiro.
     **Pendente rodar em produção** — mesmo passo de sempre.
-  - ⬜ Etapa 6 (Painéis e relatórios, radar financeiro, sugestão por IA) —
-    não iniciada.
+  - 🟡 Etapa 6 (Painéis e relatórios) — **painel** concluído (2026-09),
+    **radar financeiro e sugestão por IA ainda não** (decisão do usuário:
+    conversar sobre o radar só depois do painel estar pronto).
+    Esclarecimento importante do usuário: "painel compartilhável" é nome
+    herdado da época da planilha em Excel (print pra compartilhar por
+    fora) — não precisa mais de link/compartilhamento externo, só de
+    "baixar como imagem" (usa `html-to-image`, cliente). O "segundo
+    painel economizável" também não é uma tela separada: é o MESMO
+    painel com um filtro de quais categorias aparecem — a pessoa decide
+    o que entra (só ela sabe o que não tem margem pra economizar), e
+    pode salvar esse filtro com nome pra acesso rápido
+    (`dashboard_filters`, `db/012_dashboard_filters.sql`, isolado por
+    household+ledger, RLS). Nova tela `/painel`: resumo de todas as
+    categorias-folha (Orçado/Gasto/Restante/barra de progresso, cores
+    reaproveitadas do mês); clicar em "Gasto" expande os lançamentos
+    daquela categoria sem nenhuma chamada nova (usa os lançamentos do mês
+    já carregados); toggle "Personalizar filtro" mostra os checkboxes de
+    categoria + campo pra salvar com nome; chips de filtros salvos com
+    "×" pra excluir.
+    **Pendente rodar em produção** — mesmo passo de sempre.
   - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar
     backup/confiabilidade) — não iniciada. Observação: "desfazer" e
     "exportar backup" se sobrepõem com os itens de LGPD (trilha de

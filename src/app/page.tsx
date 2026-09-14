@@ -57,6 +57,9 @@ export default async function Home() {
           <Link href="/review-queue" className="text-sm text-accent-dark hover:underline">
             Revisão{reviewQueue.length > 0 ? ` (${reviewQueue.length})` : ""}
           </Link>
+          <Link href="/painel" className="text-sm text-accent-dark hover:underline">
+            Painel
+          </Link>
         </div>
         <div className="flex items-center gap-4 text-sm text-ink-soft">
           <span>{session.displayName ?? session.email}</span>

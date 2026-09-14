@@ -37,6 +37,7 @@ const files = [
   "db/009_audio_confirmation.sql",
   "db/010_gap_warnings.sql",
   "db/011_entry_splits.sql",
+  "db/012_dashboard_filters.sql",
 ];
 
 async function tableExists(client, name) {
