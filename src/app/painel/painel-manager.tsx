@@ -7,7 +7,6 @@ import type { LedgerRow } from "@/lib/ledgers/service";
 import type { DashboardFilterRow } from "@/lib/dashboard-filters/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
 import { formatBRL } from "@/lib/format";
-import { normalizeStr } from "@/lib/text/normalize";
 
 type PanelRow = {
   key: string;
@@ -140,45 +139,6 @@ function computeDisplayRows(
     });
   }
   return result;
-}
-
-// Ícone por palavra-chave no nome — categorias não têm um seletor de ícone
-// na UI ainda (o campo existe no banco, mas fica null na prática), então
-// isso é só um fallback visual pra não deixar todo círculo igual; usa o
-// ícone de verdade da categoria (c.icon) quando ele existir.
-const ICON_KEYWORDS: [string, string][] = [
-  ["mercado", "🛒"],
-  ["rancho", "🛒"],
-  ["supermercado", "🛒"],
-  ["feira", "🛒"],
-  ["acougue", "🛒"],
-  ["combustivel", "⛽"],
-  ["gasolina", "⛽"],
-  ["estacionamento", "🅿️"],
-  ["comer fora", "🍴"],
-  ["restaurante", "🍴"],
-  ["lazer", "🎭"],
-  ["assinatura", "💳"],
-  ["saude", "❤️"],
-  ["farmacia", "❤️"],
-  ["transporte", "🚌"],
-  ["uber", "🚌"],
-  ["negocio", "💼"],
-  ["empreendimento", "💼"],
-  ["carro", "🚗"],
-  ["agua", "💧"],
-  ["casa", "🏠"],
-  ["educacao", "📚"],
-  ["escola", "📚"],
-  ["revisao", "🔎"],
-];
-
-function fallbackIcon(label: string): string {
-  const norm = normalizeStr(label);
-  for (const [keyword, icon] of ICON_KEYWORDS) {
-    if (norm.includes(keyword)) return icon;
-  }
-  return "📁";
 }
 
 /** Sem orçado, qualquer gasto já é "estourado" — nunca fica cinza só porque
@@ -519,7 +479,7 @@ export function PainelManager({
                               style={{ background: row.color ?? "var(--muted)" }}
                               aria-hidden
                             >
-                              {row.icon ?? fallbackIcon(row.label)}
+                              {row.icon}
                             </span>
                             <span className="text-ink">{row.label}</span>
                           </div>
@@ -555,7 +515,7 @@ export function PainelManager({
                                       style={{ background: child.color ?? "var(--muted)" }}
                                       aria-hidden
                                     >
-                                      {child.icon ?? fallbackIcon(child.label)}
+                                      {child.icon}
                                     </span>
                                     <span className="text-ink-soft">{child.label}</span>
                                   </div>

@@ -11,8 +11,16 @@ type Props = {
 type PendingCreate = {
   name: string;
   color: string | null;
+  icon: string | null;
   parentId: string | null;
 };
+
+/** Sugestões pra facilitar — a pessoa também pode colar qualquer outro
+ * emoji no campo de texto ao lado. Sem ícone escolhido, o painel não
+ * mostra emoji nenhum (só a bolinha colorida) — nunca adivinha. */
+const ICON_SUGGESTIONS = [
+  "🛒", "⛽", "🅿️", "🍴", "🎭", "💳", "❤️", "🚌", "💼", "🚗", "💧", "🏠", "📚",
+];
 
 type Collision = {
   pending: PendingCreate;
@@ -52,7 +60,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
 
   const [addingTopLevel, setAddingTopLevel] = useState(false);
   const [addingSubcategoryFor, setAddingSubcategoryFor] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: string; name: string; color: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string; color: string; icon: string } | null>(null);
   const [collision, setCollision] = useState<Collision | null>(null);
   const [deleteState, setDeleteState] = useState<DeleteState | null>(null);
 
@@ -79,6 +87,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
       body: JSON.stringify({
         name: pending.name,
         color: pending.color,
+        icon: pending.icon || null,
         parentId: pending.parentId,
         confirmMerge,
         ledgerId,
@@ -102,12 +111,12 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
     await refetch();
   }
 
-  async function submitUpdate(id: string, name: string, color: string) {
+  async function submitUpdate(id: string, name: string, color: string, icon: string) {
     setError(null);
     const res = await fetch(`/api/categories/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, color: color || null }),
+      body: JSON.stringify({ name, color: color || null, icon: icon || null }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -168,7 +177,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
           placeholder="Nome da categoria"
           defaultColor="#2F6F5E"
           onCancel={() => setAddingTopLevel(false)}
-          onSubmit={(name, color) => submitCreate({ name, color, parentId: null })}
+          onSubmit={(name, color, icon) => submitCreate({ name, color, icon, parentId: null })}
         />
       )}
 
@@ -217,10 +226,12 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
                 setAddingSubcategoryFor((v) => (v === cat.id ? null : cat.id))
               }
               editing={editing?.id === cat.id ? editing : null}
-              onStartEdit={() => setEditing({ id: cat.id, name: cat.name, color: cat.color ?? "" })}
+              onStartEdit={() =>
+                setEditing({ id: cat.id, name: cat.name, color: cat.color ?? "", icon: cat.icon ?? "" })
+              }
               onChangeEdit={(patch) => setEditing((e) => (e ? { ...e, ...patch } : e))}
               onCancelEdit={() => setEditing(null)}
-              onSubmitEdit={() => editing && submitUpdate(editing.id, editing.name, editing.color)}
+              onSubmitEdit={() => editing && submitUpdate(editing.id, editing.name, editing.color, editing.icon)}
               deleteState={deleteState?.id === cat.id ? deleteState : null}
               onStartDelete={() => setDeleteState({ id: cat.id, step: "confirm" })}
               onCancelDelete={() => setDeleteState(null)}
@@ -243,7 +254,7 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
                   placeholder="Nome da subcategoria"
                   defaultColor="#2F6F5E"
                   onCancel={() => setAddingSubcategoryFor(null)}
-                  onSubmit={(name, color) => submitCreate({ name, color, parentId: cat.id })}
+                  onSubmit={(name, color, icon) => submitCreate({ name, color, icon, parentId: cat.id })}
                 />
               </div>
             )}
@@ -260,12 +271,12 @@ export function CategoryManager({ initialCategories, ledgerId }: Props) {
                   onAddSubcategory={() => {}}
                   editing={editing?.id === child.id ? editing : null}
                   onStartEdit={() =>
-                    setEditing({ id: child.id, name: child.name, color: child.color ?? "" })
+                    setEditing({ id: child.id, name: child.name, color: child.color ?? "", icon: child.icon ?? "" })
                   }
                   onChangeEdit={(patch) => setEditing((e) => (e ? { ...e, ...patch } : e))}
                   onCancelEdit={() => setEditing(null)}
                   onSubmitEdit={() =>
-                    editing && submitUpdate(editing.id, editing.name, editing.color)
+                    editing && submitUpdate(editing.id, editing.name, editing.color, editing.icon)
                   }
                   deleteState={deleteState?.id === child.id ? deleteState : null}
                   onStartDelete={() => setDeleteState({ id: child.id, step: "confirm" })}
@@ -298,52 +309,96 @@ function InlineCategoryForm({
 }: {
   placeholder: string;
   defaultColor: string;
-  onSubmit: (name: string, color: string) => void;
+  onSubmit: (name: string, color: string, icon: string) => void;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
   const [color, setColor] = useState(defaultColor);
+  const [icon, setIcon] = useState("");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         if (!name.trim()) return;
-        onSubmit(name, color);
+        onSubmit(name, color, icon);
       }}
-      className="flex items-center gap-2 rounded-lg border border-border-strong bg-card p-2"
+      className="flex flex-col gap-2 rounded-lg border border-border-strong bg-card p-2"
     >
-      <input
-        type="color"
-        value={color}
-        onChange={(e) => setColor(e.target.value)}
-        className="h-9 w-9 shrink-0 cursor-pointer rounded"
-        aria-label="Cor"
-      />
-      <input
-        type="text"
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder={placeholder}
-        className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm text-ink outline-none focus:border-accent"
-      />
-      <button
-        type="submit"
-        className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white"
-        style={{ touchAction: "manipulation" }}
-      >
-        Adicionar
-      </button>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={color}
+          onChange={(e) => setColor(e.target.value)}
+          className="h-9 w-9 shrink-0 cursor-pointer rounded"
+          aria-label="Cor"
+        />
+        <input
+          type="text"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={placeholder}
+          className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm text-ink outline-none focus:border-accent"
+        />
+        <button
+          type="submit"
+          className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white"
+          style={{ touchAction: "manipulation" }}
+        >
+          Adicionar
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="min-h-11 rounded-lg px-3 text-sm text-muted"
+          style={{ touchAction: "manipulation" }}
+        >
+          Cancelar
+        </button>
+      </div>
+      <IconPicker value={icon} onChange={setIcon} />
+    </form>
+  );
+}
+
+/** Emoji opcional pra aparecer no Painel — sem escolha aqui, o Painel mostra
+ * só a bolinha colorida, sem tentar adivinhar. */
+function IconPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1 pl-1">
+      <span className="mr-1 text-xs text-muted">Ícone (opcional):</span>
       <button
         type="button"
-        onClick={onCancel}
-        className="min-h-11 rounded-lg px-3 text-sm text-muted"
-        style={{ touchAction: "manipulation" }}
+        onClick={() => onChange("")}
+        title="Sem ícone"
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${
+          value === "" ? "border-accent bg-accent-light" : "border-border-strong"
+        }`}
       >
-        Cancelar
+        ∅
       </button>
-    </form>
+      {ICON_SUGGESTIONS.map((emoji) => (
+        <button
+          key={emoji}
+          type="button"
+          onClick={() => onChange(emoji)}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-sm ${
+            value === emoji ? "border-accent bg-accent-light" : "border-border-strong"
+          }`}
+        >
+          {emoji}
+        </button>
+      ))}
+      <input
+        type="text"
+        value={ICON_SUGGESTIONS.includes(value) || value === "" ? "" : value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="outro emoji"
+        maxLength={4}
+        className="h-8 w-20 rounded-lg border border-border-strong px-2 text-sm outline-none focus:border-accent"
+      />
+    </div>
   );
 }
 
@@ -373,9 +428,9 @@ function CategoryRow({
   onToggleExpand: () => void;
   canAddSubcategory: boolean;
   onAddSubcategory: () => void;
-  editing: { id: string; name: string; color: string } | null;
+  editing: { id: string; name: string; color: string; icon: string } | null;
   onStartEdit: () => void;
-  onChangeEdit: (patch: Partial<{ name: string; color: string }>) => void;
+  onChangeEdit: (patch: Partial<{ name: string; color: string; icon: string }>) => void;
   onCancelEdit: () => void;
   onSubmitEdit: () => void;
   deleteState: DeleteState | null;
@@ -391,30 +446,33 @@ function CategoryRow({
 
   if (editing) {
     return (
-      <div className="flex items-center gap-2 px-4 py-2" style={{ paddingLeft: 16 + depth * 24 }}>
-        <input
-          type="color"
-          value={editing.color || "#2F6F5E"}
-          onChange={(e) => onChangeEdit({ color: e.target.value })}
-          className="h-9 w-9 shrink-0 cursor-pointer rounded"
-        />
-        <input
-          type="text"
-          autoFocus
-          value={editing.name}
-          onChange={(e) => onChangeEdit({ name: e.target.value })}
-          className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm outline-none focus:border-accent"
-        />
-        <button
-          type="button"
-          onClick={onSubmitEdit}
-          className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white"
-        >
-          Salvar
-        </button>
-        <button type="button" onClick={onCancelEdit} className="min-h-11 rounded-lg px-3 text-sm text-muted">
-          Cancelar
-        </button>
+      <div className="flex flex-col gap-2 px-4 py-2" style={{ paddingLeft: 16 + depth * 24 }}>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={editing.color || "#2F6F5E"}
+            onChange={(e) => onChangeEdit({ color: e.target.value })}
+            className="h-9 w-9 shrink-0 cursor-pointer rounded"
+          />
+          <input
+            type="text"
+            autoFocus
+            value={editing.name}
+            onChange={(e) => onChangeEdit({ name: e.target.value })}
+            className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm outline-none focus:border-accent"
+          />
+          <button
+            type="button"
+            onClick={onSubmitEdit}
+            className="min-h-11 rounded-lg bg-accent px-3 text-sm text-white"
+          >
+            Salvar
+          </button>
+          <button type="button" onClick={onCancelEdit} className="min-h-11 rounded-lg px-3 text-sm text-muted">
+            Cancelar
+          </button>
+        </div>
+        <IconPicker value={editing.icon} onChange={(icon) => onChangeEdit({ icon })} />
       </div>
     );
   }
@@ -492,8 +550,18 @@ function CategoryRow({
       >
         <div className="flex min-w-0 items-center gap-2">
           {depth > 0 && <span className="text-muted">↳</span>}
-          {dotColor && (
-            <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden />
+          {node.icon ? (
+            <span
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm"
+              style={{ background: dotColor ?? "var(--muted)" }}
+              aria-hidden
+            >
+              {node.icon}
+            </span>
+          ) : (
+            dotColor && (
+              <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: dotColor }} aria-hidden />
+            )
           )}
           <button
             type="button"
