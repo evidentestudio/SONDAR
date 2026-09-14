@@ -129,14 +129,24 @@ o gatilho de quando revisitar.
     o que entra (só ela sabe o que não tem margem pra economizar), e
     pode salvar esse filtro com nome pra acesso rápido
     (`dashboard_filters`, `db/012_dashboard_filters.sql`, isolado por
-    household+ledger, RLS). Nova tela `/painel`: resumo de todas as
-    categorias-folha (Orçado/Gasto/Restante/barra de progresso, cores
-    reaproveitadas do mês); clicar em "Gasto" expande os lançamentos
-    daquela categoria sem nenhuma chamada nova (usa os lançamentos do mês
-    já carregados); toggle "Personalizar filtro" mostra os checkboxes de
-    categoria + campo pra salvar com nome; chips de filtros salvos com
-    "×" pra excluir.
-    **Pendente rodar em produção** — mesmo passo de sempre.
+    household+ledger, RLS). Nova tela `/painel`: resumo por padrão só das
+    categorias-mãe (Orçado/Gasto/Restante/barra de progresso agregados,
+    cores reaproveitadas do mês), com toggle ▸/▾ pra abrir os valores de
+    cada categoria-filha individualmente (pedido explícito do usuário
+    2026-09-14: "o Painel deve apresentar, por padrão, apenas as
+    categorias mães, sendo possibilitado abrir a visualização dos
+    valores por categorias filhas"); quando um filtro salvo exclui uma
+    categoria-filha, o total agregado da mãe também muda (soma só as
+    filhas visíveis, não o total cheio) — senão o filtro não estaria
+    excluindo nada de verdade; clicar em "Gasto" (folha, ou filha
+    expandida) expande os lançamentos daquela categoria sem nenhuma
+    chamada nova (usa os lançamentos do mês já carregados); toggle
+    "Personalizar filtro" mostra os checkboxes das categorias-folha +
+    campo pra salvar com nome; chips de filtros salvos com "×" pra
+    excluir.
+    **Pendente rodar em produção** — mesmo passo de sempre (inclui a
+    migração `db/012_dashboard_filters.sql`, que ainda não teve
+    confirmação de execução em produção).
   - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar
     backup/confiabilidade) — não iniciada. Observação: "desfazer" e
     "exportar backup" se sobrepõem com os itens de LGPD (trilha de

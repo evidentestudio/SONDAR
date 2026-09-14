@@ -9,15 +9,138 @@ import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
 import { formatBRL } from "@/lib/format";
 import { normalizeStr } from "@/lib/text/normalize";
 
-type LeafRow = {
+type PanelRow = {
   key: string;
+  /** Categoria-folha de verdade pra linhas normais; para uma linha-mãe é o
+   * id da própria categoria-mãe (nunca aparece num filtro salvo — só
+   * categorias-folha são filtráveis, ver isLeafCategory no service). */
   categoryId: string;
   label: string;
   color: string | null;
   icon: string | null;
   gasto: number;
   orcado: number;
+  isParent: boolean;
+  /** false pra linha-mãe e pro "sem subcategoria" (não são categoria-folha,
+   * nunca entram na lista de checkboxes do filtro nem num filtro salvo). */
+  filterable: boolean;
+  children: PanelRow[];
 };
+
+function buildPanelRows(nodes: CategorySummaryNode[]): PanelRow[] {
+  return nodes.map((node): PanelRow => {
+    if (node.children.length === 0) {
+      return {
+        key: node.id,
+        categoryId: node.id,
+        label: node.name,
+        color: node.color,
+        icon: node.icon,
+        gasto: node.gasto,
+        orcado: node.orcado,
+        isParent: false,
+        filterable: true,
+        children: [],
+      };
+    }
+    const children: PanelRow[] = node.children.map((child) => ({
+      key: child.id,
+      categoryId: child.id,
+      label: child.name,
+      color: child.color ?? node.color,
+      icon: child.icon ?? node.icon,
+      gasto: child.gasto,
+      orcado: child.orcado,
+      isParent: false,
+      filterable: true,
+      children: [],
+    }));
+    // Lançamentos/orçamento deixados direto na categoria-mãe de antes dela
+    // ganhar subcategorias — nunca somem do painel, viram sua própria linha
+    // ao expandir; não é uma categoria-folha, então nunca é filtrável.
+    if (node.direct) {
+      children.push({
+        key: `${node.id}-direct`,
+        categoryId: node.id,
+        label: "Sem subcategoria",
+        color: node.color,
+        icon: node.icon,
+        gasto: node.direct.gasto,
+        orcado: node.direct.orcado,
+        isParent: false,
+        filterable: false,
+        children: [],
+      });
+    }
+    return {
+      key: node.id,
+      categoryId: node.id,
+      label: node.name,
+      color: node.color,
+      icon: node.icon,
+      gasto: node.gasto,
+      orcado: node.orcado,
+      isParent: true,
+      filterable: false,
+      children,
+    };
+  });
+}
+
+/** Lista achatada só das categorias-folha (as únicas filtráveis de verdade)
+ * — usada pelos checkboxes do editor de filtro. */
+function collectFilterableRows(topRows: PanelRow[]): { key: string; categoryId: string; label: string }[] {
+  const out: { key: string; categoryId: string; label: string }[] = [];
+  for (const row of topRows) {
+    if (!row.isParent) {
+      out.push({ key: row.key, categoryId: row.categoryId, label: row.label });
+      continue;
+    }
+    for (const child of row.children) {
+      if (!child.filterable) continue;
+      out.push({ key: child.key, categoryId: child.categoryId, label: `${row.label} — ${child.label}` });
+    }
+  }
+  return out;
+}
+
+function isChildVisible(child: PanelRow, filterMode: "all" | "custom", selected: Set<string>): boolean {
+  if (!child.filterable) return true;
+  return filterMode === "all" || selected.has(child.categoryId);
+}
+
+type DisplayRow = { row: PanelRow; gasto: number; orcado: number; visibleChildren: PanelRow[] };
+
+/**
+ * Painel mostra só categorias-mãe por padrão — os valores agregados
+ * respeitam o filtro ativo (uma categoria-filha excluída pelo filtro
+ * "Economizável" não pode continuar somada no total da mãe, senão o
+ * filtro não estaria excluindo nada de verdade).
+ */
+function computeDisplayRows(
+  topRows: PanelRow[],
+  filterMode: "all" | "custom",
+  selected: Set<string>,
+): DisplayRow[] {
+  const result: DisplayRow[] = [];
+  for (const row of topRows) {
+    if (!row.isParent) {
+      if (filterMode === "all" || selected.has(row.categoryId)) {
+        result.push({ row, gasto: row.gasto, orcado: row.orcado, visibleChildren: [] });
+      }
+      continue;
+    }
+    const visibleChildren = row.children.filter((c) => isChildVisible(c, filterMode, selected));
+    if (visibleChildren.length === 0) continue;
+    result.push({
+      row,
+      gasto: visibleChildren.reduce((s, c) => s + c.gasto, 0),
+      orcado: visibleChildren.reduce((s, c) => s + c.orcado, 0),
+      visibleChildren,
+    });
+  }
+  return result;
+}
 
 // Ícone por palavra-chave no nome — categorias não têm um seletor de ícone
 // na UI ainda (o campo existe no banco, mas fica null na prática), então
@@ -56,49 +179,6 @@ function fallbackIcon(label: string): string {
     if (norm.includes(keyword)) return icon;
   }
   return "📁";
-}
-
-function flattenPanelRows(nodes: CategorySummaryNode[]): LeafRow[] {
-  const rows: LeafRow[] = [];
-  for (const node of nodes) {
-    if (node.children.length === 0) {
-      rows.push({
-        key: node.id,
-        categoryId: node.id,
-        label: node.name,
-        color: node.color,
-        icon: node.icon,
-        gasto: node.gasto,
-        orcado: node.orcado,
-      });
-      continue;
-    }
-    for (const child of node.children) {
-      rows.push({
-        key: child.id,
-        categoryId: child.id,
-        label: `${node.name} — ${child.name}`,
-        color: child.color ?? node.color,
-        icon: child.icon ?? node.icon,
-        gasto: child.gasto,
-        orcado: child.orcado,
-      });
-    }
-    // Lançamentos/orçamento deixados direto na categoria-mãe de antes dela
-    // ganhar subcategorias — nunca somem do painel, viram sua própria linha.
-    if (node.direct) {
-      rows.push({
-        key: `${node.id}-direct`,
-        categoryId: node.id,
-        label: `${node.name} — sem subcategoria`,
-        color: node.color,
-        icon: node.icon,
-        gasto: node.direct.gasto,
-        orcado: node.direct.orcado,
-      });
-    }
-  }
-  return rows;
 }
 
 /** Sem orçado, qualquer gasto já é "estourado" — nunca fica cinza só porque
@@ -147,11 +227,22 @@ export function PainelManager({
   const [savingFilter, setSavingFilter] = useState(false);
 
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const rows = flattenPanelRows(categories);
-  const visibleRows = filterMode === "all" ? rows : rows.filter((r) => selectedCategoryIds.has(r.categoryId));
+  const topRows = buildPanelRows(categories);
+  const filterableRows = collectFilterableRows(topRows);
+  const displayRows = computeDisplayRows(topRows, filterMode, selectedCategoryIds);
+
+  function toggleParent(categoryId: string) {
+    setExpandedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
+  }
 
   const loadSummary = useCallback(
     async (m: string, l: string) => {
@@ -182,6 +273,7 @@ export function PainelManager({
     setFilterMode("all");
     setActiveFilterId(null);
     setExpandedCategoryId(null);
+    setExpandedParents(new Set());
     Promise.all([loadSummary(month, ledgerId), loadEntries(month, ledgerId), loadFilters(ledgerId)]);
   }, [month, ledgerId, loadSummary, loadEntries, loadFilters]);
 
@@ -202,7 +294,7 @@ export function PainelManager({
     if (filterMode === "all") {
       setFilterMode("custom");
       setActiveFilterId(null);
-      setSelectedCategoryIds(new Set(rows.map((r) => r.categoryId)));
+      setSelectedCategoryIds(new Set(filterableRows.map((r) => r.categoryId)));
     }
   }
 
@@ -352,7 +444,7 @@ export function PainelManager({
             Categorias incluídas no painel
           </p>
           <div className="mb-3 flex flex-wrap gap-2">
-            {rows.map((r) => (
+            {filterableRows.map((r) => (
               <label
                 key={r.key}
                 className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft"
@@ -388,7 +480,7 @@ export function PainelManager({
 
       <div ref={panelRef} className="rounded-xl border border-border bg-card p-4">
         <h3 className="mb-3 font-serif text-lg text-ink">Resumo de {formatMonthLabel(month)}</h3>
-        {visibleRows.length === 0 ? (
+        {displayRows.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted">Nenhuma categoria neste filtro.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -403,18 +495,25 @@ export function PainelManager({
                 </tr>
               </thead>
               <tbody>
-                {visibleRows.map((row) => {
-                  const restante = row.orcado - row.gasto;
-                  const pct = progressPct(row.gasto, row.orcado);
-                  const color = statusColor(row.gasto, row.orcado);
-                  const restanteNegative = restante < 0;
-                  const categoryEntries = entries.filter((e) => e.category_id === row.categoryId);
-                  const isExpanded = expandedCategoryId === row.categoryId;
+                {displayRows.map(({ row, gasto, orcado, visibleChildren }) => {
+                  const isParentExpanded = expandedParents.has(row.categoryId);
+                  const isLeafExpanded = !row.isParent && expandedCategoryId === row.categoryId;
+                  const leafEntries = row.isParent ? [] : entries.filter((e) => e.category_id === row.categoryId);
                   return (
                     <Fragment key={row.key}>
                       <tr className="border-t border-border">
                         <td className="py-2 pr-2">
                           <div className="flex items-center gap-2">
+                            {row.isParent && (
+                              <button
+                                type="button"
+                                onClick={() => toggleParent(row.categoryId)}
+                                title={isParentExpanded ? "Recolher subcategorias" : "Ver subcategorias"}
+                                className="min-h-6 min-w-6 text-muted"
+                              >
+                                {isParentExpanded ? "▾" : "▸"}
+                              </button>
+                            )}
                             <span
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm"
                               style={{ background: row.color ?? "var(--muted)" }}
@@ -425,62 +524,61 @@ export function PainelManager({
                             <span className="text-ink">{row.label}</span>
                           </div>
                         </td>
-                        <td className="money py-2 text-right text-ink-soft">{formatBRL(row.orcado)}</td>
-                        <td className="py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedCategoryId((prev) => (prev === row.categoryId ? null : row.categoryId))}
-                            className="money underline decoration-dotted"
-                            style={{ color: row.gasto === 0 ? undefined : color }}
-                          >
-                            {formatBRL(row.gasto)}
-                          </button>
-                        </td>
-                        <td className="py-2 text-right">
-                          <span
-                            className="money inline-block rounded-full px-2 py-0.5 text-xs"
-                            style={
-                              restanteNegative
-                                ? { background: "var(--row-awaiting-bg)", color: "var(--row-awaiting-text)" }
-                                : { background: "var(--row-blue-bg)", color: "var(--row-blue-text)" }
-                            }
-                          >
-                            {formatBRL(restante)}
-                          </span>
-                        </td>
-                        <td className="py-2 pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-paper">
-                              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-                            </div>
-                            <span className="w-10 shrink-0 text-right text-xs text-muted">{Math.round(pct)}%</span>
-                          </div>
-                        </td>
+                        <PanelStatCells
+                          gasto={gasto}
+                          orcado={orcado}
+                          gastoClickable={!row.isParent}
+                          onGastoClick={() =>
+                            setExpandedCategoryId((prev) => (prev === row.categoryId ? null : row.categoryId))
+                          }
+                        />
                       </tr>
-                      {isExpanded && (
+                      {isLeafExpanded && (
                         <tr>
                           <td colSpan={5} className="bg-paper px-2 py-2">
-                            {categoryEntries.length === 0 ? (
-                              <p className="py-2 text-center text-xs text-muted">Nenhum lançamento nesta categoria.</p>
-                            ) : (
-                              <table className="w-full text-left text-xs">
-                                <tbody>
-                                  {categoryEntries.map((e) => (
-                                    <tr key={e.id} className="border-t border-border">
-                                      <td className="py-1 pr-2 text-muted">
-                                        {e.entry_date.slice(0, 10).split("-").reverse().join("/")}
-                                      </td>
-                                      <td className="py-1 pr-2 text-ink">{e.description}</td>
-                                      <td className="py-1 pr-2 text-muted">{e.payment_source_name ?? "—"}</td>
-                                      <td className="money py-1 text-right text-ink">{formatBRL(Number(e.amount))}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
+                            <EntriesList entries={leafEntries} />
                           </td>
                         </tr>
                       )}
+                      {row.isParent &&
+                        isParentExpanded &&
+                        visibleChildren.map((child) => {
+                          const childExpanded = expandedCategoryId === child.categoryId;
+                          const childEntries = entries.filter((e) => e.category_id === child.categoryId);
+                          return (
+                            <Fragment key={child.key}>
+                              <tr className="border-t border-border">
+                                <td className="py-2 pr-2 pl-9">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs"
+                                      style={{ background: child.color ?? "var(--muted)" }}
+                                      aria-hidden
+                                    >
+                                      {child.icon ?? fallbackIcon(child.label)}
+                                    </span>
+                                    <span className="text-ink-soft">{child.label}</span>
+                                  </div>
+                                </td>
+                                <PanelStatCells
+                                  gasto={child.gasto}
+                                  orcado={child.orcado}
+                                  gastoClickable
+                                  onGastoClick={() =>
+                                    setExpandedCategoryId((prev) => (prev === child.categoryId ? null : child.categoryId))
+                                  }
+                                />
+                              </tr>
+                              {childExpanded && (
+                                <tr>
+                                  <td colSpan={5} className="bg-paper px-2 py-2 pl-9">
+                                    <EntriesList entries={childEntries} />
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
                     </Fragment>
                   );
                 })}
@@ -490,5 +588,83 @@ export function PainelManager({
         )}
       </div>
     </div>
+  );
+}
+
+function PanelStatCells({
+  gasto,
+  orcado,
+  gastoClickable,
+  onGastoClick,
+}: {
+  gasto: number;
+  orcado: number;
+  gastoClickable: boolean;
+  onGastoClick: () => void;
+}) {
+  const restante = orcado - gasto;
+  const pct = progressPct(gasto, orcado);
+  const color = statusColor(gasto, orcado);
+  const restanteNegative = restante < 0;
+  return (
+    <>
+      <td className="money py-2 text-right text-ink-soft">{formatBRL(orcado)}</td>
+      <td className="py-2 text-right">
+        {gastoClickable ? (
+          <button
+            type="button"
+            onClick={onGastoClick}
+            className="money underline decoration-dotted"
+            style={{ color: gasto === 0 ? undefined : color }}
+          >
+            {formatBRL(gasto)}
+          </button>
+        ) : (
+          <span className="money" style={{ color: gasto === 0 ? undefined : color }}>
+            {formatBRL(gasto)}
+          </span>
+        )}
+      </td>
+      <td className="py-2 text-right">
+        <span
+          className="money inline-block rounded-full px-2 py-0.5 text-xs"
+          style={
+            restanteNegative
+              ? { background: "var(--row-awaiting-bg)", color: "var(--row-awaiting-text)" }
+              : { background: "var(--row-blue-bg)", color: "var(--row-blue-text)" }
+          }
+        >
+          {formatBRL(restante)}
+        </span>
+      </td>
+      <td className="py-2 pl-4">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-paper">
+            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+          </div>
+          <span className="w-10 shrink-0 text-right text-xs text-muted">{Math.round(pct)}%</span>
+        </div>
+      </td>
+    </>
+  );
+}
+
+function EntriesList({ entries }: { entries: EntryRow[] }) {
+  if (entries.length === 0) {
+    return <p className="py-2 text-center text-xs text-muted">Nenhum lançamento nesta categoria.</p>;
+  }
+  return (
+    <table className="w-full text-left text-xs">
+      <tbody>
+        {entries.map((e) => (
+          <tr key={e.id} className="border-t border-border">
+            <td className="py-1 pr-2 text-muted">{e.entry_date.slice(0, 10).split("-").reverse().join("/")}</td>
+            <td className="py-1 pr-2 text-ink">{e.description}</td>
+            <td className="py-1 pr-2 text-muted">{e.payment_source_name ?? "—"}</td>
+            <td className="money py-1 text-right text-ink">{formatBRL(Number(e.amount))}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
