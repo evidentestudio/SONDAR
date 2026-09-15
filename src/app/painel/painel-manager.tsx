@@ -6,7 +6,10 @@ import type { EntryRow } from "@/lib/entries/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
 import type { DashboardFilterRow } from "@/lib/dashboard-filters/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, parseBRLAmount } from "@/lib/format";
+import type { RedistributionObjective, RedistributionPlan } from "@/lib/radar/redistribution";
+
+type RadarDiagnosisResult = { diagnosis: string; tips: string[]; patterns: string[] };
 
 type PanelRow = {
   key: string;
@@ -191,6 +194,18 @@ export function PainelManager({
   const [downloading, setDownloading] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const [radarLoading, setRadarLoading] = useState(false);
+  const [radarError, setRadarError] = useState<string | null>(null);
+  const [radarResult, setRadarResult] = useState<RadarDiagnosisResult | null>(null);
+
+  const [showRedistribute, setShowRedistribute] = useState(false);
+  const [redistObjective, setRedistObjective] = useState<RedistributionObjective>("nao_estourar");
+  const [redistTargetAmount, setRedistTargetAmount] = useState("");
+  const [redistSelected, setRedistSelected] = useState<Set<string>>(new Set());
+  const [redistPlan, setRedistPlan] = useState<RedistributionPlan | null>(null);
+  const [redistLoading, setRedistLoading] = useState(false);
+  const [redistApplying, setRedistApplying] = useState(false);
+
   const topRows = buildPanelRows(categories);
   const filterableRows = collectFilterableRows(topRows);
   const displayRows = computeDisplayRows(topRows, filterMode, selectedCategoryIds);
@@ -234,6 +249,11 @@ export function PainelManager({
     setActiveFilterId(null);
     setExpandedCategoryId(null);
     setExpandedParents(new Set());
+    setRadarResult(null);
+    setRadarError(null);
+    setShowRedistribute(false);
+    setRedistSelected(new Set());
+    setRedistPlan(null);
     Promise.all([loadSummary(month, ledgerId), loadEntries(month, ledgerId), loadFilters(ledgerId)]);
   }, [month, ledgerId, loadSummary, loadEntries, loadFilters]);
 
@@ -310,6 +330,88 @@ export function PainelManager({
     } finally {
       setDownloading(false);
     }
+  }
+
+  /** Sempre sob pedido — nunca chamado automaticamente ao abrir o Painel,
+   * decisão explícita do usuário pra manter o custo de IA sob controle. */
+  async function generateRadarDiagnosis() {
+    setRadarLoading(true);
+    setRadarError(null);
+    const res = await fetch("/api/radar/diagnose", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ledgerId, month }),
+    });
+    const data = await res.json();
+    setRadarLoading(false);
+    if (!res.ok) {
+      setRadarError(data.error ?? "Não foi possível gerar o diagnóstico.");
+      return;
+    }
+    setRadarResult(data);
+  }
+
+  function toggleRedistCategory(categoryId: string) {
+    setRedistSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) next.delete(categoryId);
+      else next.add(categoryId);
+      return next;
+    });
+    setRedistPlan(null);
+  }
+
+  async function calculateRedistribution() {
+    setRedistLoading(true);
+    setError(null);
+    const targetAmount = redistObjective === "economizar" ? parseBRLAmount(redistTargetAmount) : null;
+    const res = await fetch("/api/radar/redistribute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ledgerId,
+        month,
+        objective: redistObjective,
+        targetAmount,
+        categoryIds: Array.from(redistSelected),
+        apply: false,
+      }),
+    });
+    const data = await res.json();
+    setRedistLoading(false);
+    if (!res.ok) {
+      setError(data.error ?? "Não foi possível calcular a redistribuição.");
+      return;
+    }
+    setRedistPlan(data.plan);
+  }
+
+  async function applyRedistribution() {
+    if (!redistPlan || redistPlan.status !== "ok") return;
+    setRedistApplying(true);
+    const targetAmount = redistObjective === "economizar" ? parseBRLAmount(redistTargetAmount) : null;
+    const res = await fetch("/api/radar/redistribute", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ledgerId,
+        month,
+        objective: redistObjective,
+        targetAmount,
+        categoryIds: Array.from(redistSelected),
+        apply: true,
+      }),
+    });
+    const data = await res.json();
+    setRedistApplying(false);
+    if (!res.ok) {
+      setError(data.error ?? "Não foi possível aplicar a redistribuição.");
+      return;
+    }
+    setRedistPlan(null);
+    setShowRedistribute(false);
+    setRedistSelected(new Set());
+    await loadSummary(month, ledgerId);
   }
 
   return (
@@ -544,6 +646,187 @@ export function PainelManager({
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-serif text-lg text-ink">🔎 Radar Financeiro</h3>
+          <button
+            type="button"
+            onClick={generateRadarDiagnosis}
+            disabled={radarLoading}
+            className="min-h-9 rounded-lg bg-accent px-3 text-sm text-white disabled:opacity-50"
+          >
+            {radarLoading ? "Gerando..." : radarResult ? "Atualizar diagnóstico" : "Gerar diagnóstico"}
+          </button>
+        </div>
+        {radarError && (
+          <div className="rounded-lg border border-rust bg-rust-light px-4 py-2 text-sm text-rust">{radarError}</div>
+        )}
+        {!radarResult && !radarLoading && !radarError && (
+          <p className="text-sm text-muted">
+            Clique em &ldquo;Gerar diagnóstico&rdquo; pra ver como está a saúde do orçamento deste mês, dicas de
+            reorganização e padrões de consumo identificados no histórico.
+          </p>
+        )}
+        {radarResult && (
+          <div className="flex flex-col gap-3 text-sm">
+            <p className="text-ink-soft">{radarResult.diagnosis}</p>
+            {radarResult.tips.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">Dicas</p>
+                <ul className="list-disc pl-5 text-ink-soft">
+                  {radarResult.tips.map((tip, i) => (
+                    <li key={i}>{tip}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {radarResult.patterns.length > 0 && (
+              <div>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">Padrões identificados</p>
+                <ul className="list-disc pl-5 text-ink-soft">
+                  {radarResult.patterns.map((pattern, i) => (
+                    <li key={i}>{pattern}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-serif text-lg text-ink">Redistribuir orçados</h3>
+          <button
+            type="button"
+            onClick={() => setShowRedistribute((v) => !v)}
+            className="min-h-9 rounded-lg border border-border-strong px-3 text-sm text-accent-dark"
+          >
+            {showRedistribute ? "▲ Fechar" : "▼ Redistribuir"}
+          </button>
+        </div>
+        {showRedistribute && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-ink-soft">
+                <input
+                  type="radio"
+                  checked={redistObjective === "nao_estourar"}
+                  onChange={() => {
+                    setRedistObjective("nao_estourar");
+                    setRedistPlan(null);
+                  }}
+                />
+                Não estourar a meta
+              </label>
+              <label className="flex items-center gap-2 text-sm text-ink-soft">
+                <input
+                  type="radio"
+                  checked={redistObjective === "economizar"}
+                  onChange={() => {
+                    setRedistObjective("economizar");
+                    setRedistPlan(null);
+                  }}
+                />
+                Economizar
+                <input
+                  type="text"
+                  value={redistTargetAmount}
+                  onChange={(e) => {
+                    setRedistTargetAmount(e.target.value);
+                    setRedistPlan(null);
+                  }}
+                  onFocus={() => setRedistObjective("economizar")}
+                  placeholder="R$ 0,00"
+                  className="min-h-9 w-28 rounded-lg border border-border-strong px-2 text-sm"
+                />
+              </label>
+            </div>
+
+            <div>
+              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+                Categorias que podem ser ajustadas
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {filterableRows.map((r) => (
+                  <label
+                    key={r.key}
+                    className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-xs text-ink-soft"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={redistSelected.has(r.categoryId)}
+                      onChange={() => toggleRedistCategory(r.categoryId)}
+                    />
+                    {r.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={calculateRedistribution}
+              disabled={
+                redistLoading ||
+                redistSelected.size === 0 ||
+                (redistObjective === "economizar" && !redistTargetAmount.trim())
+              }
+              className="min-h-9 self-start rounded-lg bg-accent px-3 text-sm text-white disabled:opacity-50"
+            >
+              {redistLoading ? "Calculando..." : "Calcular redistribuição"}
+            </button>
+
+            {redistPlan?.status === "infeasible" && (
+              <div className="rounded-lg border border-rust bg-rust-light px-3 py-2 text-sm text-rust">
+                {redistPlan.message}
+              </div>
+            )}
+
+            {redistPlan?.status === "ok" && (
+              <div className="flex flex-col gap-2">
+                {redistPlan.items.length === 0 ? (
+                  <p className="text-sm text-muted">
+                    Nenhuma categoria selecionada está estourada — nada pra redistribuir.
+                  </p>
+                ) : (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[420px] text-left text-sm">
+                        <thead>
+                          <tr className="text-xs uppercase tracking-wide text-muted">
+                            <th className="pb-1">Categoria</th>
+                            <th className="pb-1 text-right">Orçado atual</th>
+                            <th className="pb-1 text-right">Novo orçado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {redistPlan.items.map((item) => (
+                            <tr key={item.categoryId} className="border-t border-border">
+                              <td className="py-1 text-ink-soft">{item.label}</td>
+                              <td className="money py-1 text-right text-ink-soft">{formatBRL(item.oldOrcado)}</td>
+                              <td className="money py-1 text-right text-ink">{formatBRL(item.newOrcado)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={applyRedistribution}
+                      disabled={redistApplying}
+                      className="min-h-9 self-start rounded-lg bg-accent px-3 text-sm text-white disabled:opacity-50"
+                    >
+                      {redistApplying ? "Aplicando..." : "Aplicar redistribuição"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -117,9 +117,10 @@ o gatilho de quando revisitar.
     usada nas duas telas) trava tudo-ou-nada se a soma não fechar com o
     valor original, exatamente o teste automatizado pedido pelo roteiro.
     **Migração confirmada em produção** (2026-09-15).
-  - 🟡 Etapa 6 (Painéis e relatórios) — **painel** concluído (2026-09),
-    **radar financeiro e sugestão por IA ainda não** (decisão do usuário:
-    conversar sobre o radar só depois do painel estar pronto).
+  - 🟡 Etapa 6 (Painéis e relatórios) — **painel e radar financeiro**
+    concluídos (2026-09), **sugestão por IA fora do radar ainda não**
+    (nunca chegou a ser detalhada — não fazia parte do escopo que o
+    usuário descreveu pro radar).
     Esclarecimento importante do usuário: "painel compartilhável" é nome
     herdado da época da planilha em Excel (print pra compartilhar por
     fora) — não precisa mais de link/compartilhamento externo, só de
@@ -145,6 +146,47 @@ o gatilho de quando revisitar.
     campo pra salvar com nome; chips de filtros salvos com "×" pra
     excluir.
     **Migração confirmada em produção** (2026-09-15).
+    **Radar Financeiro** (2026-09-15, sem migração — reaproveita a tabela
+    `budgets` já existente): duas peças novas no `/painel`, abaixo da
+    tabela de categorias.
+    1. Card "🔎 Radar Financeiro" — diagnóstico gerado **sempre sob
+       pedido** (botão "Gerar diagnóstico"; nunca automático ao abrir o
+       Painel — decisão explícita do usuário pra não gastar chamada de
+       IA silenciosamente). Manda pra IA (mesmo modelo/padrão do
+       `src/lib/ai/extract.ts`) os números reais de todas as
+       categorias-folha do mês (orçado, gasto, status já calculado por
+       código — "dentro"/"perto"/"estourado", mesmos limiares 70%/100%
+       das cores do Painel) mais o histórico de gasto dos 3 meses
+       anteriores por categoria; a IA devolve um diagnóstico curto, até 5
+       dicas qualitativas de reorganização e até 3 padrões de consumo
+       identificados no histórico. A IA nunca inventa categoria fora da
+       lista, e nunca propõe um valor numérico de redistribuição — só
+       fala em termos qualitativos.
+    2. Card "Redistribuir orçados" — a pessoa escolhe o objetivo do mês
+       ("Não estourar a meta" ou "Economizar R$X", meta = orçado total
+       atual do mês, por confirmação do usuário) e marca na hora quais
+       categorias-folha entram (não reaproveita filtro salvo — escolha
+       feita a cada uso, por decisão do usuário), calcula uma prévia
+       (antes/depois por categoria) e só depois aplica.
+       **Decisão de arquitetura, disclosed deliberadamente**: a conta em
+       si (`src/lib/radar/redistribution.ts`, `planRedistribution`) é
+       100% determinística — puro JS, sem IA — porque é aritmética exata
+       envolvendo dinheiro real; a IA nunca decide nem valida esse
+       número, só o diagnóstico em texto. "Não estourar a meta" fecha o
+       estouro das categorias selecionadas puxando folga de outras
+       selecionadas, proporcional à folga de cada uma, preservando a
+       soma orçada do grupo. "Economizar R$X" reduz o orçado das
+       selecionadas proporcional à folga, nunca abaixo do que já foi
+       gasto no mês. Nos dois casos, se a folga disponível no grupo
+       escolhido não for suficiente, a meta é avisada como irrealista
+       (mensagem determinística, nunca gerada pela IA) e nada é alterado
+       — a pessoa decide se inclui mais categorias ou aceita o resultado
+       parcial. `applyBudgetRedistribution` (`src/lib/budgets/service.ts`)
+       persiste tudo numa única instrução atômica via `unnest`, mesmo
+       padrão do `splitEntry` da Etapa 5. Testes automatizados
+       (`tests/redistribution.test.ts`, sem dependência de banco) cobrem
+       os dois objetivos, o rateio proporcional e os dois casos de meta
+       irrealista.
   - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar
     backup/confiabilidade) — não iniciada. Observação: "desfazer" e
     "exportar backup" se sobrepõem com os itens de LGPD (trilha de

@@ -44,6 +44,31 @@ export async function setBudget(
   return { status: "set", budget: rows[0] };
 }
 
+/**
+ * Aplica de uma vez o plano calculado por planRedistribution (Radar
+ * Financeiro — src/lib/radar/redistribution.ts): uma única instrução
+ * atômica via unnest, mesmo padrão já usado em splitEntry
+ * (src/lib/entries/service.ts) pra evitar múltiplas idas ao banco fora de
+ * uma transação. Os valores em si (o "quanto") já vieram prontos e
+ * validados do planejador puro — esta função só persiste.
+ */
+export async function applyBudgetRedistribution(
+  householdId: string,
+  monthKey: string,
+  items: { categoryId: string; amount: number }[],
+): Promise<void> {
+  if (items.length === 0) return;
+  const monthDate = monthToDbDate(monthKey);
+  await dbForHousehold(
+    householdId,
+    `INSERT INTO budgets (household_id, category_id, month, amount)
+     SELECT $1, x.category_id, $2::date, x.amount
+     FROM unnest($3::uuid[], $4::numeric[]) AS x(category_id, amount)
+     ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount, updated_at = now()`,
+    [householdId, monthDate, items.map((i) => i.categoryId), items.map((i) => i.amount)],
+  );
+}
+
 /** Upserts every budgeted category from the previous month into monthKey, scoped to one ledger. */
 export async function copyBudgetsFromPreviousMonth(
   householdId: string,
