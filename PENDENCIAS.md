@@ -116,7 +116,7 @@ o gatilho de quando revisitar.
     (`src/lib/entries/split-validation.ts`, sem dependência de banco,
     usada nas duas telas) trava tudo-ou-nada se a soma não fechar com o
     valor original, exatamente o teste automatizado pedido pelo roteiro.
-    **Pendente rodar em produção** — mesmo passo de sempre.
+    **Migração confirmada em produção** (2026-09-15).
   - 🟡 Etapa 6 (Painéis e relatórios) — **painel** concluído (2026-09),
     **radar financeiro e sugestão por IA ainda não** (decisão do usuário:
     conversar sobre o radar só depois do painel estar pronto).
@@ -144,9 +144,7 @@ o gatilho de quando revisitar.
     "Personalizar filtro" mostra os checkboxes das categorias-folha +
     campo pra salvar com nome; chips de filtros salvos com "×" pra
     excluir.
-    **Pendente rodar em produção** — mesmo passo de sempre (inclui a
-    migração `db/012_dashboard_filters.sql`, que ainda não teve
-    confirmação de execução em produção).
+    **Migração confirmada em produção** (2026-09-15).
   - ⬜ Etapa 7 (Navegação/busca/desfazer via audit_log/exportar-importar
     backup/confiabilidade) — não iniciada. Observação: "desfazer" e
     "exportar backup" se sobrepõem com os itens de LGPD (trilha de
@@ -231,8 +229,7 @@ o gatilho de quando revisitar.
        Pensado pra deixar validar com uso real (falar gastos normalmente
        e depois processar a fatura de verdade) antes de qualquer uso
        comercial, sem precisar montar um roteiro de teste artificial.
-       **Pendente rodar em produção** — mesmo passo de sempre (Neon SQL
-       Editor + registrar em `_sondar_migrations`).
+       **Migração confirmada em produção** (2026-09-15).
     6. 🟡 Lacunas de registro (dinheiro/Pix) — `payment_sources.leaves_no_paper_trail`
        (marcado explicitamente pela pessoa ao criar/editar uma forma de
        pagamento — nunca adivinhado por nome) + `categories.gap_alerts_silenced_at`
@@ -245,7 +242,7 @@ o gatilho de quando revisitar.
        orçamento Principal, com "Lançar agora" (abre o formulário já com
        a categoria certa, campo de valor vazio) e "Não me avise mais"
        (obrigatório, por categoria, persistente).
-       **Pendente rodar em produção** — mesmo passo de sempre.
+       **Migração confirmada em produção** (2026-09-15).
     7. ✅ Revisão em lote — nova tela `/review-queue` ("Revisão" no menu,
        com contador de pendentes) junta TODO lançamento sinalizado
        (`needs_review`/`possible_duplicate`) de qualquer mês/orçamento
