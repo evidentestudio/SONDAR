@@ -304,14 +304,14 @@ function LedgerPanel({
     async (m: string) => {
       const ids = entryFilters.ledgerIds;
       const params =
-        ids.length > 1
-          ? new URLSearchParams({ month: m, ledgerIds: ids.join(",") })
-          : new URLSearchParams({ month: m, ledgerId: ids[0] ?? ledgerId });
+        ids.length === 1
+          ? new URLSearchParams({ month: m, ledgerId: ids[0] })
+          : new URLSearchParams({ month: m, ledgerIds: ids.join(",") });
       const res = await fetch(`/api/entries?${params}`);
       const data = await res.json();
       setEntries(data.entries ?? []);
     },
-    [ledgerId, entryFilters.ledgerIds],
+    [entryFilters.ledgerIds],
   );
 
   // Avisos de lacuna de registro (seção 3) só fazem sentido no orçamento
@@ -336,18 +336,14 @@ function LedgerPanel({
   }, [ledgerId, month, loadSummary, loadEntries, loadGapWarnings]);
 
   /** Marca/desmarca um orçamento no filtro de Lançamentos — liberdade total
-   * pra escolher qualquer combinação, inclusive excluir o deste próprio
-   * painel; só não deixa chegar a zero (não ignora o clique, mantém sempre
-   * pelo menos um marcado). */
+   * pra escolher qualquer combinação, inclusive excluir todos (a lista fica
+   * vazia nesse caso, nunca recusa o clique silenciosamente — ver
+   * loadEntries). */
   function toggleLedgerFilter(id: string) {
-    setEntryFilters((f) => {
-      const isSelected = f.ledgerIds.includes(id);
-      if (isSelected && f.ledgerIds.length === 1) return f;
-      return {
-        ...f,
-        ledgerIds: isSelected ? f.ledgerIds.filter((x) => x !== id) : [...f.ledgerIds, id],
-      };
-    });
+    setEntryFilters((f) => ({
+      ...f,
+      ledgerIds: f.ledgerIds.includes(id) ? f.ledgerIds.filter((x) => x !== id) : [...f.ledgerIds, id],
+    }));
   }
 
   async function copyPreviousBudget() {
@@ -842,7 +838,11 @@ function LedgerPanel({
 
             {filteredEntries.length === 0 ? (
               <p className="py-4 text-center text-sm text-muted">
-                {entries.length === 0 ? "Nenhum lançamento neste mês ainda." : "Nenhum lançamento com esse filtro."}
+                {entryFilters.ledgerIds.length === 0
+                  ? "Marque ao menos um orçamento pra ver os lançamentos."
+                  : entries.length === 0
+                    ? "Nenhum lançamento neste mês ainda."
+                    : "Nenhum lançamento com esse filtro."}
               </p>
             ) : (
               <div className="overflow-x-auto">

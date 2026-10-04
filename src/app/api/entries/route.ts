@@ -16,16 +16,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Mês inválido." }, { status: 400 });
   }
 
-  // "Visão combinada" — ver lib/listEntries: cada lançamento já carrega seu
+  // Filtro "Orçamentos" em Lançamentos: cada lançamento já carrega seu
   // próprio ledger_id, então combinar vários orçamentos numa lista só é
-  // seguro e mostra de qual orçamento cada lançamento é.
+  // seguro e mostra de qual orçamento cada lançamento é. Checado por
+  // presença do parâmetro (não truthiness) pra "ledgerIds=" (vazio, todos
+  // os orçamentos desmarcados) cair aqui também, em vez de silenciosamente
+  // voltar pro orçamento padrão.
   const ledgerIdsParam = searchParams.get("ledgerIds");
-  if (ledgerIdsParam) {
-    const requested = ledgerIdsParam.split(",").filter(Boolean);
+  if (searchParams.has("ledgerIds")) {
+    const requested = (ledgerIdsParam ?? "").split(",").filter(Boolean);
     const ledgers = await listLedgers(session.householdId);
     const validIds = requested.filter((id) => ledgers.some((l) => l.id === id));
     if (validIds.length === 0) {
-      return NextResponse.json({ error: "Nenhum orçamento válido selecionado." }, { status: 400 });
+      return NextResponse.json({ entries: [] });
     }
     const entries = await listEntries(session.householdId, validIds, month, { paymentSourceId });
     return NextResponse.json({ entries });
