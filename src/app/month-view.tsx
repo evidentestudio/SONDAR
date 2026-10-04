@@ -93,8 +93,6 @@ export function MonthView({ initialMonth, ledgers, defaultLedgerId, initialData,
         </button>
       </div>
 
-      {ledgers.length > 1 && <CombinedLedgersPanel ledgers={ledgers} month={month} />}
-
       <LedgerPanel
         ledgerId={defaultLedgerId}
         ledgerName={defaultLedger?.name ?? "Principal"}
@@ -114,216 +112,6 @@ export function MonthView({ initialMonth, ledgers, defaultLedgerId, initialData,
           paymentSources={paymentSources}
         />
       ))}
-    </div>
-  );
-}
-
-/**
- * Visão combinada entre orçamentos — pedido do usuário: ver, por exemplo,
- * quanto gastou de Cartão somando vários orçamentos de uma vez. Formas de
- * pagamento são dimensão do household (compartilhada entre orçamentos — ver
- * db/003_ledgers.sql), então somar aqui é sempre uma soma de verdade, nunca
- * uma junção arriscada por nome. Fica de fora de propósito: a árvore de
- * categorias/orçado — cada orçamento tem a sua própria, independente, sem
- * forma correta de somar uma com a outra automaticamente.
- */
-function CombinedLedgersPanel({ ledgers, month }: { ledgers: LedgerRow[]; month: string }) {
-  const [open, setOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>(ledgers.map((l) => l.id));
-  const [totals, setTotals] = useState<MonthTotals>({ gastoTotal: 0, creditosTotal: 0 });
-  const [paymentSourceTotals, setPaymentSourceTotals] = useState<PaymentSourceTotal[]>([]);
-  const [entries, setEntries] = useState<EntryRow[]>([]);
-  const [entryFilters, setEntryFilters] = useState({ paymentSourceId: "", description: "", dateFrom: "", dateTo: "" });
-  const ledgerNameById = new Map(ledgers.map((l) => [l.id, l.name]));
-  const paymentSourceOptions = new Map(
-    entries.filter((e) => e.payment_source_id).map((e) => [e.payment_source_id!, e.payment_source_name ?? ""]),
-  );
-
-  // Mesmo padrão de loadSummary/loadEntries em LedgerPanel: nenhum setState
-  // antes do primeiro await (as duas chamadas fetch abaixo), de propósito —
-  // não existe indicador de "carregando" em nenhum carregamento automático
-  // deste arquivo, os dados só trocam silenciosamente quando a resposta
-  // chega.
-  const load = useCallback(async (ids: string[]) => {
-    const idsParam = ids.join(",");
-    const [summaryRes, entriesRes] = await Promise.all([
-      fetch(`/api/month-summary?${new URLSearchParams({ month, ledgerIds: idsParam })}`),
-      fetch(`/api/entries?${new URLSearchParams({ month, ledgerIds: idsParam })}`),
-    ]);
-    const summaryData = await summaryRes.json();
-    const entriesData = await entriesRes.json();
-    setTotals(summaryData.totals ?? { gastoTotal: 0, creditosTotal: 0 });
-    setPaymentSourceTotals(summaryData.paymentSourceTotals ?? []);
-    setEntries(entriesData.entries ?? []);
-  }, [month]);
-
-  // react-hooks/set-state-in-effect flags this call even though it mirrors
-  // the exact load-on-dependency-change pattern already used by
-  // loadSummary/loadEntries/loadGapWarnings above (fetch-then-setState,
-  // nothing synchronous before the first await) — this experimental rule's
-  // heuristic doesn't recognize it here for reasons that don't trace back to
-  // an actual synchronous setState call. Disabling deliberately, not
-  // silently: this is the same "sync panel data when its own filters change"
-  // pattern used throughout this file.
-  useEffect(() => {
-    if (!open || selectedIds.length === 0) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load(selectedIds);
-  }, [open, selectedIds, load]);
-
-  function toggleLedger(id: string) {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  const filteredEntries = entries.filter((e) => {
-    if (entryFilters.paymentSourceId && e.payment_source_id !== entryFilters.paymentSourceId) return false;
-    if (
-      entryFilters.description &&
-      !e.description.toLowerCase().includes(entryFilters.description.toLowerCase())
-    )
-      return false;
-    if (entryFilters.dateFrom && e.entry_date.slice(0, 10) < entryFilters.dateFrom) return false;
-    if (entryFilters.dateTo && e.entry_date.slice(0, 10) > entryFilters.dateTo) return false;
-    return true;
-  });
-
-  return (
-    <div className="rounded-xl border border-border bg-card">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-3 text-left"
-      >
-        <span className="font-serif text-lg text-ink">📊 Visão combinada de orçamentos</span>
-        <span className="text-sm text-muted">{open ? "▲ recolher" : "▼ expandir"}</span>
-      </button>
-      {open && (
-        <div className="flex flex-col gap-4 border-t border-border p-4">
-          <p className="text-xs text-muted">
-            Soma lançamentos e formas de pagamento de todos os orçamentos marcados abaixo — útil pra
-            ver, por exemplo, quanto saiu do Cartão somando vários orçamentos de uma vez. A árvore de
-            categorias/orçado continua uma por orçamento (cada um tem a sua própria, independente),
-            por isso não aparece aqui.
-          </p>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            {ledgers.map((l) => (
-              <label
-                key={l.id}
-                className="flex items-center gap-1 rounded-full border border-border-strong px-3 py-1 text-ink-soft"
-              >
-                <input type="checkbox" checked={selectedIds.includes(l.id)} onChange={() => toggleLedger(l.id)} />
-                {l.name}
-              </label>
-            ))}
-          </div>
-
-          {selectedIds.length === 0 ? (
-            <p className="text-sm text-muted">Marque ao menos um orçamento.</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
-                <MetricCard label="Gasto total" value={totals.gastoTotal} />
-                <MetricCard label="Créditos" value={totals.creditosTotal} />
-              </div>
-
-              <div className="rounded-xl border border-border bg-paper p-4">
-                <h3 className="mb-3 font-serif text-base text-ink">Total por forma de pagamento</h3>
-                {paymentSourceTotals.length === 0 ? (
-                  <p className="text-sm text-muted">Nenhum lançamento com forma de pagamento definida.</p>
-                ) : (
-                  <ul className="flex flex-col gap-2">
-                    {paymentSourceTotals.map((p) => (
-                      <li key={p.paymentSourceId} className="flex items-center justify-between text-sm">
-                        <span className="text-ink-soft">{p.paymentSourceName}</span>
-                        <span className="money text-ink">{formatBRL(p.total)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={entryFilters.paymentSourceId}
-                    onChange={(e) => setEntryFilters((f) => ({ ...f, paymentSourceId: e.target.value }))}
-                    className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
-                  >
-                    <option value="">Todas as formas</option>
-                    {Array.from(paymentSourceOptions.entries()).map(([id, name]) => (
-                      <option key={id} value={id}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={entryFilters.description}
-                    onChange={(e) => setEntryFilters((f) => ({ ...f, description: e.target.value }))}
-                    placeholder="Descrição"
-                    className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={entryFilters.dateFrom}
-                    onChange={(e) => setEntryFilters((f) => ({ ...f, dateFrom: e.target.value }))}
-                    className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
-                  />
-                  <input
-                    type="date"
-                    value={entryFilters.dateTo}
-                    onChange={(e) => setEntryFilters((f) => ({ ...f, dateTo: e.target.value }))}
-                    className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
-                  />
-                </div>
-
-                <div className="overflow-x-auto rounded-xl border border-border bg-paper">
-                  <table className="w-full min-w-[560px] text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-border text-xs uppercase tracking-wide text-muted">
-                        <th className="px-3 py-2">Data</th>
-                        <th className="px-3 py-2">Orçamento</th>
-                        <th className="px-3 py-2">Descrição</th>
-                        <th className="px-3 py-2">Categoria</th>
-                        <th className="px-3 py-2">Forma</th>
-                        <th className="px-3 py-2 text-right">Valor</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredEntries.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-3 py-6 text-center text-muted">
-                            Nenhum lançamento.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredEntries.map((e) => (
-                          <tr key={e.id} className="border-b border-border last:border-b-0">
-                            <td className="whitespace-nowrap px-3 py-2 text-ink-soft">
-                              {e.entry_date.slice(0, 10).split("-").reverse().join("/")}
-                            </td>
-                            <td className="px-3 py-2 text-ink-soft">{ledgerNameById.get(e.ledger_id) ?? "—"}</td>
-                            <td className="px-3 py-2 text-ink">{e.description}</td>
-                            <td className="px-3 py-2 text-ink-soft">{e.category_name ?? "—"}</td>
-                            <td className="px-3 py-2 text-ink-soft">{e.payment_source_name ?? "—"}</td>
-                            <td
-                              className="money whitespace-nowrap px-3 py-2 text-right"
-                              style={{ color: e.entry_type === "income" ? "var(--status-green)" : undefined }}
-                            >
-                              {e.entry_type === "income" ? "+" : "-"}
-                              {formatBRL(Number(e.amount))}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -391,12 +179,23 @@ function LedgerPanel({
   const [entries, setEntries] = useState<EntryRow[]>(initialData?.entries ?? []);
   const [gapWarnings, setGapWarnings] = useState<GapWarning[]>(initialData?.gapWarnings ?? []);
   const [presetCategoryId, setPresetCategoryId] = useState<string | null>(null);
-  const [entryFilters, setEntryFilters] = useState({
+  const [entryFilters, setEntryFilters] = useState<{
+    categoryId: string;
+    paymentSourceId: string;
+    description: string;
+    dateFrom: string;
+    dateTo: string;
+    /** Orçamentos extras, além deste painel — pedido do usuário pra ver
+     * lançamentos de vários orçamentos juntos nesta mesma lista (ex: somar
+     * "Cartão" entre orçamentos). Vazio = só este orçamento, como sempre. */
+    extraLedgerIds: string[];
+  }>({
     categoryId: "",
     paymentSourceId: "",
     description: "",
     dateFrom: "",
     dateTo: "",
+    extraLedgerIds: [],
   });
   const [entriesCollapsed, setEntriesCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -458,8 +257,15 @@ function LedgerPanel({
   const orcadoTotal = categories
     .filter((c) => c.categoryType === "normal")
     .reduce((s, c) => s + c.orcado, 0);
+  const ledgerNameById = new Map(ledgers.map((l) => [l.id, l.name]));
 
-  const hasActiveFilter = Object.values(entryFilters).some((v) => v !== "");
+  const hasActiveFilter =
+    entryFilters.categoryId !== "" ||
+    entryFilters.paymentSourceId !== "" ||
+    entryFilters.description !== "" ||
+    entryFilters.dateFrom !== "" ||
+    entryFilters.dateTo !== "" ||
+    entryFilters.extraLedgerIds.length > 0;
   const filteredEntries = entries.filter((e) => {
     if (entryFilters.categoryId && e.category_id !== entryFilters.categoryId) return false;
     if (entryFilters.paymentSourceId && e.payment_source_id !== entryFilters.paymentSourceId) return false;
@@ -492,11 +298,16 @@ function LedgerPanel({
 
   const loadEntries = useCallback(
     async (m: string) => {
-      const res = await fetch(`/api/entries?${new URLSearchParams({ month: m, ledgerId })}`);
+      const ids = [ledgerId, ...entryFilters.extraLedgerIds];
+      const params =
+        ids.length > 1
+          ? new URLSearchParams({ month: m, ledgerIds: ids.join(",") })
+          : new URLSearchParams({ month: m, ledgerId });
+      const res = await fetch(`/api/entries?${params}`);
       const data = await res.json();
       setEntries(data.entries ?? []);
     },
-    [ledgerId],
+    [ledgerId, entryFilters.extraLedgerIds],
   );
 
   // Avisos de lacuna de registro (seção 3) só fazem sentido no orçamento
@@ -952,6 +763,38 @@ function LedgerPanel({
                   className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
                 />
               </label>
+              {showEntryControls && ledgers.length > 1 && (
+                <div className="flex flex-col gap-0.5 text-xs text-muted">
+                  Orçamentos
+                  <div className="flex flex-wrap items-center gap-1">
+                    {ledgers.map((l) => {
+                      const isThisPanel = l.id === ledgerId;
+                      const checked = isThisPanel || entryFilters.extraLedgerIds.includes(l.id);
+                      return (
+                        <label
+                          key={l.id}
+                          className="flex items-center gap-1 rounded-lg border border-border-strong px-2 py-1.5 text-ink-soft"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isThisPanel}
+                            onChange={() =>
+                              setEntryFilters({
+                                ...entryFilters,
+                                extraLedgerIds: entryFilters.extraLedgerIds.includes(l.id)
+                                  ? entryFilters.extraLedgerIds.filter((id) => id !== l.id)
+                                  : [...entryFilters.extraLedgerIds, l.id],
+                              })
+                            }
+                          />
+                          {l.name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {hasActiveFilter && (
                 <button
                   type="button"
@@ -962,6 +805,7 @@ function LedgerPanel({
                       description: "",
                       dateFrom: "",
                       dateTo: "",
+                      extraLedgerIds: [],
                     })
                   }
                   className="min-h-9 rounded-lg px-2 text-xs text-muted underline"
@@ -1223,6 +1067,11 @@ function LedgerPanel({
                                 title="Parte de um lançamento dividido em categorias"
                               >
                                 ✂️
+                              </span>
+                            )}
+                            {entryFilters.extraLedgerIds.length > 0 && entry.ledger_id !== ledgerId && (
+                              <span className="ml-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] text-muted">
+                                {ledgerNameById.get(entry.ledger_id) ?? "?"}
                               </span>
                             )}
                           </td>

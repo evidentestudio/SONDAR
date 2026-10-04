@@ -312,32 +312,36 @@ o gatilho de quando revisitar.
 - ✅ **Filtro de vários orçamentos ao mesmo tempo** (2026-10-04) — pedido
   do usuário: poder ver, por exemplo, quanto saiu do Cartão somando
   vários orçamentos de uma vez, já que antes só dava pra olhar um
-  orçamento por vez.
+  orçamento por vez. Primeira tentativa criou uma seção separada
+  ("Visão combinada de orçamentos"); o usuário corrigiu — queria só
+  **mais um filtro dentro de Lançamentos**, chamado "Orçamentos", não um
+  bloco novo. Reimplementado assim:
   - `/installment-plans`: o antigo seletor de orçamento (link, um só por
     vez) virou checkboxes (`LedgerFilter`, `src/app/ledger-filter.tsx`,
     reaproveitado pelas duas telas). Com mais de um marcado, a lista de
     parcelamentos e a projeção de parcelas combinam os planos dos
     orçamentos escolhidos numa lista só, cada linha mostrando de qual
     orçamento é.
-  - `/` (Lançamentos/mês): nova seção colapsável "📊 Visão combinada de
-    orçamentos" (fechada por padrão, só aparece com mais de um
-    orçamento) — soma o total por forma de pagamento e lista os
-    lançamentos de todos os orçamentos marcados, cada linha com seu
-    próprio orçamento identificado.
-  - **Decisão de arquitetura, explicitada ao usuário antes de implementar**
-    (3 perguntas respondidas: tela, forma de somar, escopo): formas de
-    pagamento são uma dimensão do household, compartilhada entre
-    orçamentos (`payment_sources` não tem `ledger_id` — ver
-    `db/003_ledgers.sql`), então somar "Cartão" entre orçamentos é
-    sempre uma soma de verdade pelo mesmo `payment_source_id`, nunca uma
-    junção arriscada por nome. A árvore de categorias/orçado fica de
-    fora de propósito — cada orçamento tem a sua própria árvore
-    independente, sem forma correta de somar uma categoria com outra
-    automaticamente entre orçamentos diferentes.
-  - `listEntries`, `listInstallmentPlans`, `getInstallmentForecastGrid`,
-    `getMonthTotals` e `getPaymentSourceTotals` agora aceitam um
-    `ledgerId` ou uma lista deles (`string | string[]`) — compatível com
-    todo código existente, que continua passando um único id.
+  - `/` (Lançamentos/mês), painel Principal: novo filtro "Orçamentos" na
+    MESMA linha de filtros que já existia (Categoria/Forma/Descrição/
+    Data) — checkboxes de cada orçamento (o próprio sempre marcado e
+    travado). Marcar outro combina os lançamentos dele na mesma tabela,
+    com uma etiqueta do nome do orçamento ao lado da descrição pra
+    distinguir de qual orçamento cada linha veio. Não mexe na árvore de
+    categorias/orçado nem no "Total por forma de pagamento" daquele
+    painel — é só mais um filtro de lançamentos, como pedido.
+  - **Decisão de arquitetura**: formas de pagamento são uma dimensão do
+    household, compartilhada entre orçamentos (`payment_sources` não
+    tem `ledger_id` — ver `db/003_ledgers.sql`), então combinar
+    lançamentos de "Cartão" entre orçamentos nunca é uma junção
+    arriscada por nome — é sempre o mesmo `payment_source_id`.
+  - `listEntries`, `listInstallmentPlans` e `getInstallmentForecastGrid`
+    agora aceitam um `ledgerId` ou uma lista deles (`string | string[]`)
+    — compatível com todo código existente, que continua passando um
+    único id. `getMonthTotals`/`getPaymentSourceTotals` também ganharam
+    esse suporte (mesmo padrão, mesmo arquivo) mas não têm chamador
+    ainda — nenhuma tela pediu somar o total geral ou "Total por forma
+    de pagamento" entre orçamentos, só a lista de lançamentos.
   - Sem migração — nenhuma coluna ou tabela nova, só consultas que agora
     aceitam `ledger_id = ANY($lista)`.
   - Testes automatizados cobrindo a soma entre orçamentos em
