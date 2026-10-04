@@ -35,16 +35,19 @@ export type EntryRow = {
   split_group_id: string | null;
 };
 
+/** Aceita um ou vários ledgerIds — permite combinar lançamentos de vários
+ * orçamentos numa lista só (cada linha já carrega seu próprio ledger_id). */
 export async function listEntries(
   householdId: string,
-  ledgerId: string,
+  ledgerId: string | string[],
   monthKey: string,
   filters?: { paymentSourceId?: string },
 ): Promise<EntryRow[]> {
+  const ledgerIds = Array.isArray(ledgerId) ? ledgerId : [ledgerId];
   const monthStart = monthToDbDate(monthKey);
   const monthEnd = monthToDbDate(nextMonthKey(monthKey));
 
-  const values: unknown[] = [householdId, ledgerId, monthStart, monthEnd];
+  const values: unknown[] = [householdId, ledgerIds, monthStart, monthEnd];
   let paymentSourceClause = "";
   if (filters?.paymentSourceId) {
     values.push(filters.paymentSourceId);
@@ -64,7 +67,7 @@ export async function listEntries(
      LEFT JOIN categories c ON c.id = e.category_id
      LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
      LEFT JOIN installment_plans ip ON ip.id = e.installment_plan_id
-     WHERE e.household_id = $1 AND e.ledger_id = $2 AND e.deleted_at IS NULL
+     WHERE e.household_id = $1 AND e.ledger_id = ANY($2::uuid[]) AND e.deleted_at IS NULL
        AND e.entry_date >= $3::date AND e.entry_date < $4::date
        ${paymentSourceClause}
      ORDER BY e.entry_date DESC, e.created_at DESC`,

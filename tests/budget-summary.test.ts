@@ -170,3 +170,97 @@ describe("orçamento e resumo categoria x gasto — Etapa 2", () => {
     expect(result.status).toBe("error");
   });
 });
+
+describe("getMonthTotals / getPaymentSourceTotals com vários orçamentos (visão combinada do Painel)", () => {
+  let householdId: string;
+  let ledgerAId: string;
+  let ledgerBId: string;
+  let cartaoId: string;
+
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_multi_ledger_totals__') RETURNING id`,
+    );
+    householdId = rows[0].id;
+
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerAId = ledgerRows[0].id;
+    const { rows: ledgerBRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name) VALUES ($1, 'Empresa') RETURNING id`,
+      [householdId],
+    );
+    ledgerBId = ledgerBRows[0].id;
+
+    // payment_sources é dimensão do household (compartilhada entre
+    // orçamentos — ver db/003_ledgers.sql): o mesmo "Cartão" é usado por
+    // lançamentos dos dois orçamentos abaixo.
+    const cartao = await createPaymentSource(householdId, { name: "Cartão" });
+    if (cartao.status === "error") throw new Error("setup failed");
+    cartaoId = cartao.source.id;
+
+    // Categorias são independentes por orçamento — cada ledger precisa da sua.
+    const mercadoA = await createCategory(householdId, ledgerAId, { name: "Mercado" });
+    const mercadoB = await createCategory(householdId, ledgerBId, { name: "Mercado" });
+    if (mercadoA.status !== "created" || mercadoB.status !== "created") throw new Error("setup failed");
+
+    await createEntry(householdId, {
+      ledgerId: ledgerAId,
+      entryType: "expense",
+      entryDate: "2026-09-05",
+      description: "Compra A",
+      amount: 100,
+      categoryId: mercadoA.category.id,
+      paymentSourceId: cartaoId,
+    });
+    await createEntry(householdId, {
+      ledgerId: ledgerBId,
+      entryType: "expense",
+      entryDate: "2026-09-06",
+      description: "Compra B",
+      amount: 50,
+      categoryId: mercadoB.category.id,
+      paymentSourceId: cartaoId,
+    });
+    await createEntry(householdId, {
+      ledgerId: ledgerAId,
+      entryType: "income",
+      entryDate: "2026-09-01",
+      description: "Salário A",
+      amount: 300,
+      categoryId: null,
+    });
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM payment_sources WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    await pool.end();
+  });
+
+  it("cada orçamento sozinho continua vendo só os próprios lançamentos", async () => {
+    const totalsA = await getMonthTotals(householdId, ledgerAId, MONTH);
+    expect(totalsA.gastoTotal).toBe(100);
+    const cartaoA = await getPaymentSourceTotals(householdId, ledgerAId, MONTH);
+    expect(cartaoA.find((t) => t.paymentSourceId === cartaoId)?.total).toBe(100);
+  });
+
+  it("passando os dois ledgerIds, soma Cartão dos dois orçamentos (mesmo payment_source_id)", async () => {
+    const totals = await getPaymentSourceTotals(householdId, [ledgerAId, ledgerBId], MONTH);
+    const cartao = totals.find((t) => t.paymentSourceId === cartaoId);
+    expect(cartao?.total).toBe(150); // 100 (Principal) + 50 (Empresa)
+    // Uma linha só por payment_source_id — nunca uma por orçamento.
+    expect(totals.filter((t) => t.paymentSourceId === cartaoId)).toHaveLength(1);
+  });
+
+  it("passando os dois ledgerIds, soma gasto e crédito dos dois orçamentos", async () => {
+    const totals = await getMonthTotals(householdId, [ledgerAId, ledgerBId], MONTH);
+    expect(totals.gastoTotal).toBe(150); // 100 + 50
+    expect(totals.creditosTotal).toBe(300); // só existe na Principal
+  });
+});

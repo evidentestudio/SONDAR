@@ -255,3 +255,73 @@ describe("lançamentos", () => {
     });
   });
 });
+
+describe("listEntries com vários orçamentos (visão combinada do Painel)", () => {
+  let householdId: string;
+  let ledgerAId: string;
+  let ledgerBId: string;
+  let categoryAId: string;
+  let categoryBId: string;
+
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_entries_multi_ledger__') RETURNING id`,
+    );
+    householdId = rows[0].id;
+
+    const { rows: ledgerARows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerAId = ledgerARows[0].id;
+    const { rows: ledgerBRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name) VALUES ($1, 'Empresa') RETURNING id`,
+      [householdId],
+    );
+    ledgerBId = ledgerBRows[0].id;
+
+    const catA = await createCategory(householdId, ledgerAId, { name: "Mercado" });
+    const catB = await createCategory(householdId, ledgerBId, { name: "Mercado" });
+    if (catA.status !== "created" || catB.status !== "created") throw new Error("setup failed");
+    categoryAId = catA.category.id;
+    categoryBId = catB.category.id;
+
+    await createEntry(householdId, {
+      ledgerId: ledgerAId,
+      entryType: "expense",
+      entryDate: "2026-09-05",
+      description: "Compra A",
+      amount: 10,
+      categoryId: categoryAId,
+    });
+    await createEntry(householdId, {
+      ledgerId: ledgerBId,
+      entryType: "expense",
+      entryDate: "2026-09-06",
+      description: "Compra B",
+      amount: 20,
+      categoryId: categoryBId,
+    });
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    await pool.end();
+  });
+
+  it("um ledgerId só continua retornando só os lançamentos daquele orçamento", async () => {
+    const entriesA = await listEntries(householdId, ledgerAId, MONTH);
+    expect(entriesA.map((e) => e.description)).toEqual(["Compra A"]);
+  });
+
+  it("uma lista de ledgerIds combina os lançamentos dos dois orçamentos, cada um com seu próprio ledger_id", async () => {
+    const combined = await listEntries(householdId, [ledgerAId, ledgerBId], MONTH);
+    expect(combined).toHaveLength(2);
+    const byDescription = Object.fromEntries(combined.map((e) => [e.description, e.ledger_id]));
+    expect(byDescription["Compra A"]).toBe(ledgerAId);
+    expect(byDescription["Compra B"]).toBe(ledgerBId);
+  });
+});

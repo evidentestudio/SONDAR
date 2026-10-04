@@ -8,6 +8,7 @@ import { formatMonthLabel } from "@/lib/date";
 type ForecastCell = { month: string; installmentNumber: number; amount: number; isReal: boolean };
 type ForecastPlanRow = {
   planId: string;
+  ledgerId: string;
   description: string;
   categoryName: string;
   paymentSourceId: string | null;
@@ -20,20 +21,23 @@ type ForecastGrid = { months: string[]; plans: ForecastPlanRow[]; totalsByMonth:
 const EMPTY_GRID: ForecastGrid = { months: [], plans: [], totalsByMonth: {} };
 
 export function InstallmentForecast({
-  ledgerId,
+  ledgerIds,
+  ledgerNameById,
   paymentSources,
 }: {
-  ledgerId: string;
+  ledgerIds: string[];
+  ledgerNameById: Record<string, string>;
   paymentSources: PaymentSourceRow[];
 }) {
   const [open, setOpen] = useState(true);
   const [paymentSourceId, setPaymentSourceId] = useState("");
   const [grid, setGrid] = useState<ForecastGrid>(EMPTY_GRID);
+  const showLedgerBadge = ledgerIds.length > 1;
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    const qs = new URLSearchParams({ ledgerId });
+    const qs = new URLSearchParams({ ledgerIds: ledgerIds.join(",") });
     if (paymentSourceId) qs.set("paymentSourceId", paymentSourceId);
     fetch(`/api/installment-plans/forecast?${qs.toString()}`)
       .then((res) => res.json())
@@ -43,7 +47,7 @@ export function InstallmentForecast({
     return () => {
       cancelled = true;
     };
-  }, [ledgerId, paymentSourceId, open]);
+  }, [ledgerIds, paymentSourceId, open]);
 
   return (
     <div className="mb-8 flex flex-col gap-3">
@@ -104,6 +108,7 @@ export function InstallmentForecast({
                         <td className="sticky left-0 z-10 bg-card px-3 py-2 align-top">
                           <div className="max-w-40 truncate text-ink">{plan.description}</div>
                           <div className="truncate text-xs text-muted">
+                            {showLedgerBadge ? `${ledgerNameById[plan.ledgerId] ?? "?"} · ` : ""}
                             {plan.paymentSourceName ?? "Sem forma definida"}
                           </div>
                         </td>

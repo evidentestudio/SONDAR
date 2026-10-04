@@ -122,17 +122,30 @@ export async function getCategoryMonthSummary(
   return roots;
 }
 
+/**
+ * Aceita um ou vários ledgerIds — pedido do usuário pra conseguir ver, por
+ * exemplo, "quanto eu gastei de Cartão" somando vários orçamentos de uma
+ * vez. payment_sources é dimensão do household (compartilhada entre
+ * orçamentos — ver db/003_ledgers.sql), então o mesmo payment_source_id
+ * nunca é ambíguo entre ledgers: somar é sempre uma soma de verdade, nunca
+ * uma junção arriscada por nome. Categorias/orçados continuam
+ * propositalmente de fora dessa agregação — cada ledger tem sua própria
+ * árvore de categorias independente, então não há uma forma correta e
+ * automática de somar "Mercado" de um orçamento com "Mercado" de outro.
+ */
 export async function getMonthTotals(
   householdId: string,
-  ledgerId: string,
+  ledgerId: string | string[],
   monthKey: string,
 ): Promise<{ gastoTotal: number; creditosTotal: number }> {
+  const ledgerIds = Array.isArray(ledgerId) ? ledgerId : [ledgerId];
   const monthDate = monthToDbDate(monthKey);
   const { rows } = await dbForHousehold<{ gasto_total: string | null; creditos_total: string | null }>(
     householdId,
-    `SELECT gasto_total, creditos_total FROM month_totals
-     WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date`,
-    [householdId, ledgerId, monthDate],
+    `SELECT SUM(gasto_total) AS gasto_total, SUM(creditos_total) AS creditos_total
+     FROM month_totals
+     WHERE household_id = $1 AND ledger_id = ANY($2::uuid[]) AND month = $3::date`,
+    [householdId, ledgerIds, monthDate],
   );
   return {
     gastoTotal: Number(rows[0]?.gasto_total ?? 0),
@@ -148,17 +161,19 @@ export type PaymentSourceTotal = {
 
 export async function getPaymentSourceTotals(
   householdId: string,
-  ledgerId: string,
+  ledgerId: string | string[],
   monthKey: string,
 ): Promise<PaymentSourceTotal[]> {
+  const ledgerIds = Array.isArray(ledgerId) ? ledgerId : [ledgerId];
   const monthDate = monthToDbDate(monthKey);
   const { rows } = await dbForHousehold<{ payment_source_id: string; payment_source_name: string; total: string }>(
     householdId,
-    `SELECT payment_source_id, payment_source_name, total
+    `SELECT payment_source_id, payment_source_name, SUM(total) AS total
      FROM payment_source_month_summary
-     WHERE household_id = $1 AND ledger_id = $2 AND month = $3::date
+     WHERE household_id = $1 AND ledger_id = ANY($2::uuid[]) AND month = $3::date
+     GROUP BY payment_source_id, payment_source_name
      ORDER BY payment_source_name ASC`,
-    [householdId, ledgerId, monthDate],
+    [householdId, ledgerIds, monthDate],
   );
   return rows.map((r) => ({
     paymentSourceId: r.payment_source_id,

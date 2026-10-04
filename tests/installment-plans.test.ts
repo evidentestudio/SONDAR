@@ -308,3 +308,82 @@ describe("parcelamentos — Etapa 4", () => {
     });
   });
 });
+
+describe("listInstallmentPlans / getInstallmentForecastGrid com vários orçamentos (visão combinada)", () => {
+  let householdId: string;
+  let ledgerAId: string;
+  let ledgerBId: string;
+
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_installments_multi_ledger__') RETURNING id`,
+    );
+    householdId = rows[0].id;
+
+    const { rows: ledgerARows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerAId = ledgerARows[0].id;
+    const { rows: ledgerBRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name) VALUES ($1, 'Empresa') RETURNING id`,
+      [householdId],
+    );
+    ledgerBId = ledgerBRows[0].id;
+
+    const catA = await createCategory(householdId, ledgerAId, { name: "Assinaturas" });
+    const catB = await createCategory(householdId, ledgerBId, { name: "Assinaturas" });
+    if (catA.status !== "created" || catB.status !== "created") throw new Error("setup failed");
+
+    const planA = await createInstallmentPlan(householdId, {
+      ledgerId: ledgerAId,
+      description: "Plano A",
+      categoryId: catA.category.id,
+      installmentAmount: 10,
+      totalInstallments: 6,
+      currentInstallmentNumber: 1,
+      currentInstallmentDate: "2026-09-10",
+    });
+    const planB = await createInstallmentPlan(householdId, {
+      ledgerId: ledgerBId,
+      description: "Plano B",
+      categoryId: catB.category.id,
+      installmentAmount: 20,
+      totalInstallments: 6,
+      currentInstallmentNumber: 1,
+      currentInstallmentDate: "2026-09-10",
+    });
+    if (planA.status !== "created" || planB.status !== "created") throw new Error("setup failed");
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM installment_plans WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    await pool.end();
+  });
+
+  it("um ledgerId só continua listando só os planos daquele orçamento", async () => {
+    const plansA = await listInstallmentPlans(householdId, ledgerAId);
+    expect(plansA.map((p) => p.description)).toEqual(["Plano A"]);
+  });
+
+  it("uma lista de ledgerIds combina os planos dos dois orçamentos, cada um com seu próprio ledger_id", async () => {
+    const combined = await listInstallmentPlans(householdId, [ledgerAId, ledgerBId]);
+    expect(combined).toHaveLength(2);
+    const byDescription = Object.fromEntries(combined.map((p) => [p.description, p.ledger_id]));
+    expect(byDescription["Plano A"]).toBe(ledgerAId);
+    expect(byDescription["Plano B"]).toBe(ledgerBId);
+  });
+
+  it("a projeção soma os totais por mês dos dois orçamentos juntos, e marca cada linha com seu ledgerId", async () => {
+    const grid = await getInstallmentForecastGrid(householdId, [ledgerAId, ledgerBId], { fromMonth: "2026-09" });
+    expect(grid.totalsByMonth["2026-09"]).toBe(30); // 10 (Plano A) + 20 (Plano B)
+    const planARow = grid.plans.find((p) => p.description === "Plano A")!;
+    const planBRow = grid.plans.find((p) => p.description === "Plano B")!;
+    expect(planARow.ledgerId).toBe(ledgerAId);
+    expect(planBRow.ledgerId).toBe(ledgerBId);
+  });
+});

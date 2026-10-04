@@ -5,7 +5,7 @@ import type { InstallmentPlanRow } from "@/lib/installment-plans/service";
 import { formatBRL } from "@/lib/format";
 import { currentMonthKey, formatMonthLabel, nextMonthKey } from "@/lib/date";
 
-type PlanWithProgress = InstallmentPlanRow & { currentInstallmentNumber: number };
+type PlanWithProgress = InstallmentPlanRow & { currentInstallmentNumber: number; ledgerName?: string };
 
 export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWithProgress[] }) {
   const [plans, setPlans] = useState(initialPlans);
@@ -95,6 +95,7 @@ export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWit
             <div className="flex min-w-0 flex-col gap-0.5">
               <span className="truncate text-sm text-ink">{p.description}</span>
               <span className="text-xs text-muted">
+                {p.ledgerName ? `${p.ledgerName} · ` : ""}
                 {p.category_name} · {formatBRL(Number(p.installment_amount))}/mês · parcela{" "}
                 {p.currentInstallmentNumber}/{p.total_installments}
               </span>

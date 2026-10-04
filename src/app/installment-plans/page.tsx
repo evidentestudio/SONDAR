@@ -7,27 +7,32 @@ import { listPaymentSources } from "@/lib/payment-sources/service";
 import { currentMonthKey, dbDateToMonthKey, monthsBetween } from "@/lib/date";
 import { InstallmentPlanManager } from "./installment-plan-manager";
 import { InstallmentForecast } from "./installment-forecast";
+import { LedgerFilter } from "../ledger-filter";
 
 export default async function InstallmentPlansPage({
   searchParams,
 }: {
-  searchParams: Promise<{ ledgerId?: string }>;
+  searchParams: Promise<{ ledgerIds?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
 
   await ensureDefaultLedger(session.householdId);
   const ledgers = await listLedgers(session.householdId);
-  const { ledgerId: requestedLedgerId } = await searchParams;
-  const ledgerId = ledgers.some((l) => l.id === requestedLedgerId)
-    ? requestedLedgerId!
-    : (ledgers.find((l) => l.is_default) ?? ledgers[0]).id;
+  const { ledgerIds: requestedParam } = await searchParams;
+  const requested = requestedParam ? requestedParam.split(",").filter(Boolean) : [];
+  const validRequested = requested.filter((id) => ledgers.some((l) => l.id === id));
+  const selectedLedgerIds =
+    validRequested.length > 0 ? validRequested : [(ledgers.find((l) => l.is_default) ?? ledgers[0]).id];
+  const showLedgerBadge = selectedLedgerIds.length > 1;
+  const ledgerNameById = Object.fromEntries(ledgers.map((l) => [l.id, l.name]));
 
-  const plans = await listInstallmentPlans(session.householdId, ledgerId);
+  const plans = await listInstallmentPlans(session.householdId, selectedLedgerIds);
   const paymentSources = await listPaymentSources(session.householdId);
   const month = currentMonthKey();
   const plansWithProgress = plans.map((p) => ({
     ...p,
+    ledgerName: showLedgerBadge ? ledgerNameById[p.ledger_id] : undefined,
     currentInstallmentNumber: Math.min(
       Math.max(1, monthsBetween(dbDateToMonthKey(p.anchor_month), month) + 1),
       p.total_installments,
@@ -53,20 +58,9 @@ export default async function InstallmentPlansPage({
           foram lançadas continuam no histórico.
         </p>
         {ledgers.length > 1 && (
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted">Orçamento:</span>
-            {ledgers.map((l) => (
-              <Link
-                key={l.id}
-                href={`/installment-plans?ledgerId=${l.id}`}
-                className={`rounded-full px-3 py-1 ${l.id === ledgerId ? "bg-accent text-white" : "border border-border-strong text-ink-soft"}`}
-              >
-                {l.name}
-              </Link>
-            ))}
-          </div>
+          <LedgerFilter ledgers={ledgers} selectedIds={selectedLedgerIds} basePath="/installment-plans" />
         )}
-        <InstallmentForecast ledgerId={ledgerId} paymentSources={paymentSources} />
+        <InstallmentForecast ledgerIds={selectedLedgerIds} ledgerNameById={ledgerNameById} paymentSources={paymentSources} />
 
         <InstallmentPlanManager initialPlans={plansWithProgress} />
       </main>

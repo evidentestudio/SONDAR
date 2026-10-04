@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/current";
 import { createEntry, listEntries } from "@/lib/entries/service";
-import { resolveLedgerId } from "@/lib/ledgers/service";
+import { listLedgers, resolveLedgerId } from "@/lib/ledgers/service";
 import { isValidMonthKey, currentMonthKey } from "@/lib/date";
 
 export async function GET(request: Request) {
@@ -14,6 +14,21 @@ export async function GET(request: Request) {
 
   if (!isValidMonthKey(month)) {
     return NextResponse.json({ error: "Mês inválido." }, { status: 400 });
+  }
+
+  // "Visão combinada" — ver lib/listEntries: cada lançamento já carrega seu
+  // próprio ledger_id, então combinar vários orçamentos numa lista só é
+  // seguro e mostra de qual orçamento cada lançamento é.
+  const ledgerIdsParam = searchParams.get("ledgerIds");
+  if (ledgerIdsParam) {
+    const requested = ledgerIdsParam.split(",").filter(Boolean);
+    const ledgers = await listLedgers(session.householdId);
+    const validIds = requested.filter((id) => ledgers.some((l) => l.id === id));
+    if (validIds.length === 0) {
+      return NextResponse.json({ error: "Nenhum orçamento válido selecionado." }, { status: 400 });
+    }
+    const entries = await listEntries(session.householdId, validIds, month, { paymentSourceId });
+    return NextResponse.json({ entries });
   }
 
   const ledgerId = await resolveLedgerId(session.householdId, searchParams.get("ledgerId"));

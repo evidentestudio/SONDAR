@@ -141,18 +141,22 @@ export async function createInstallmentPlan(
   return { status: "created", plan, entryId: entryResult.entry.id };
 }
 
+/** Aceita um ou vários ledgerIds — cada linha já carrega seu próprio
+ * ledger_id, então combinar parcelamentos de vários orçamentos é seguro: a
+ * tela mostra de qual orçamento cada um é. */
 export async function listInstallmentPlans(
   householdId: string,
-  ledgerId: string,
+  ledgerId: string | string[],
 ): Promise<InstallmentPlanRow[]> {
+  const ledgerIds = Array.isArray(ledgerId) ? ledgerId : [ledgerId];
   const { rows } = await dbForHousehold<InstallmentPlanRow>(
     householdId,
     `SELECT p.*, c.name AS category_name
      FROM installment_plans p
      JOIN categories c ON c.id = p.category_id
-     WHERE p.household_id = $1 AND p.ledger_id = $2 AND p.deleted_at IS NULL
+     WHERE p.household_id = $1 AND p.ledger_id = ANY($2::uuid[]) AND p.deleted_at IS NULL
      ORDER BY p.anchor_month DESC, lower(immutable_unaccent(p.description)) ASC`,
-    [householdId, ledgerId],
+    [householdId, ledgerIds],
   );
   return rows;
 }
@@ -168,6 +172,7 @@ export type ForecastCell = {
 
 export type ForecastPlanRow = {
   planId: string;
+  ledgerId: string;
   description: string;
   categoryName: string;
   paymentSourceId: string | null;
@@ -192,12 +197,13 @@ export type ForecastGrid = {
  */
 export async function getInstallmentForecastGrid(
   householdId: string,
-  ledgerId: string,
+  ledgerId: string | string[],
   options?: { paymentSourceId?: string; fromMonth?: string },
 ): Promise<ForecastGrid> {
+  const ledgerIds = Array.isArray(ledgerId) ? ledgerId : [ledgerId];
   const fromMonth = options?.fromMonth ?? currentMonthKey();
 
-  const values: unknown[] = [householdId, ledgerId];
+  const values: unknown[] = [householdId, ledgerIds];
   let paymentSourceClause = "";
   if (options?.paymentSourceId) {
     values.push(options.paymentSourceId);
@@ -210,7 +216,7 @@ export async function getInstallmentForecastGrid(
      FROM installment_plans p
      JOIN categories c ON c.id = p.category_id
      LEFT JOIN payment_sources ps ON ps.id = p.payment_source_id
-     WHERE p.household_id = $1 AND p.ledger_id = $2 AND p.deleted_at IS NULL
+     WHERE p.household_id = $1 AND p.ledger_id = ANY($2::uuid[]) AND p.deleted_at IS NULL
        ${paymentSourceClause}`,
     values,
   );
@@ -251,6 +257,7 @@ export async function getInstallmentForecastGrid(
     if (cells.length === 0) continue; // plano já concluído antes do mês inicial
     planRows.push({
       planId: plan.id,
+      ledgerId: plan.ledger_id,
       description: plan.description,
       categoryName: plan.category_name,
       paymentSourceId: plan.payment_source_id,
