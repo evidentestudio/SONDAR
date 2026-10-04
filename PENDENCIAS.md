@@ -324,11 +324,15 @@ o gatilho de quando revisitar.
     orçamento é.
   - `/` (Lançamentos/mês), painel Principal: novo filtro "Orçamentos" na
     MESMA linha de filtros que já existia (Categoria/Forma/Descrição/
-    Data) — checkboxes de cada orçamento (o próprio sempre marcado e
-    travado). Marcar outro combina os lançamentos dele na mesma tabela,
-    com uma etiqueta do nome do orçamento ao lado da descrição pra
-    distinguir de qual orçamento cada linha veio. Não mexe na árvore de
-    categorias/orçado nem no "Total por forma de pagamento" daquele
+    Data) — checkboxes de cada orçamento, com liberdade total pra marcar
+    qualquer combinação (inclusive desmarcar o deste próprio painel; só
+    não deixa chegar a zero marcados). Versão inicial travava o
+    checkbox do próprio orçamento — corrigido a pedido do usuário
+    (2026-10-04) pra deixar todos clicáveis. Marcar outro combina os
+    lançamentos dele na mesma tabela, com uma etiqueta do nome do
+    orçamento ao lado da descrição pra distinguir de qual orçamento
+    cada linha veio. Não mexe na árvore de categorias/orçado nem no
+    "Total por forma de pagamento" daquele
     painel — é só mais um filtro de lançamentos, como pedido.
   - **Decisão de arquitetura**: formas de pagamento são uma dimensão do
     household, compartilhada entre orçamentos (`payment_sources` não

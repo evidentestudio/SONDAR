@@ -185,17 +185,20 @@ function LedgerPanel({
     description: string;
     dateFrom: string;
     dateTo: string;
-    /** Orçamentos extras, além deste painel — pedido do usuário pra ver
-     * lançamentos de vários orçamentos juntos nesta mesma lista (ex: somar
-     * "Cartão" entre orçamentos). Vazio = só este orçamento, como sempre. */
-    extraLedgerIds: string[];
+    /** Quais orçamentos entram na lista de Lançamentos abaixo — pedido do
+     * usuário pra poder combinar lançamentos de vários orçamentos na mesma
+     * lista (ex: somar "Cartão" entre orçamentos), com liberdade total pra
+     * marcar/desmarcar qualquer um, inclusive o deste próprio painel.
+     * Nunca fica vazio — a última marcação não pode ser desmarcada (ver
+     * toggleLedgerFilter). Padrão: só este orçamento, como sempre foi. */
+    ledgerIds: string[];
   }>({
     categoryId: "",
     paymentSourceId: "",
     description: "",
     dateFrom: "",
     dateTo: "",
-    extraLedgerIds: [],
+    ledgerIds: [ledgerId],
   });
   const [entriesCollapsed, setEntriesCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -265,7 +268,8 @@ function LedgerPanel({
     entryFilters.description !== "" ||
     entryFilters.dateFrom !== "" ||
     entryFilters.dateTo !== "" ||
-    entryFilters.extraLedgerIds.length > 0;
+    entryFilters.ledgerIds.length !== 1 ||
+    entryFilters.ledgerIds[0] !== ledgerId;
   const filteredEntries = entries.filter((e) => {
     if (entryFilters.categoryId && e.category_id !== entryFilters.categoryId) return false;
     if (entryFilters.paymentSourceId && e.payment_source_id !== entryFilters.paymentSourceId) return false;
@@ -298,16 +302,16 @@ function LedgerPanel({
 
   const loadEntries = useCallback(
     async (m: string) => {
-      const ids = [ledgerId, ...entryFilters.extraLedgerIds];
+      const ids = entryFilters.ledgerIds;
       const params =
         ids.length > 1
           ? new URLSearchParams({ month: m, ledgerIds: ids.join(",") })
-          : new URLSearchParams({ month: m, ledgerId });
+          : new URLSearchParams({ month: m, ledgerId: ids[0] ?? ledgerId });
       const res = await fetch(`/api/entries?${params}`);
       const data = await res.json();
       setEntries(data.entries ?? []);
     },
-    [ledgerId, entryFilters.extraLedgerIds],
+    [ledgerId, entryFilters.ledgerIds],
   );
 
   // Avisos de lacuna de registro (seção 3) só fazem sentido no orçamento
@@ -330,6 +334,21 @@ function LedgerPanel({
     }
     Promise.all([loadSummary(month), loadEntries(month), loadGapWarnings(month)]);
   }, [ledgerId, month, loadSummary, loadEntries, loadGapWarnings]);
+
+  /** Marca/desmarca um orçamento no filtro de Lançamentos — liberdade total
+   * pra escolher qualquer combinação, inclusive excluir o deste próprio
+   * painel; só não deixa chegar a zero (não ignora o clique, mantém sempre
+   * pelo menos um marcado). */
+  function toggleLedgerFilter(id: string) {
+    setEntryFilters((f) => {
+      const isSelected = f.ledgerIds.includes(id);
+      if (isSelected && f.ledgerIds.length === 1) return f;
+      return {
+        ...f,
+        ledgerIds: isSelected ? f.ledgerIds.filter((x) => x !== id) : [...f.ledgerIds, id],
+      };
+    });
+  }
 
   async function copyPreviousBudget() {
     setError(null);
@@ -767,31 +786,19 @@ function LedgerPanel({
                 <div className="flex flex-col gap-0.5 text-xs text-muted">
                   Orçamentos
                   <div className="flex flex-wrap items-center gap-1">
-                    {ledgers.map((l) => {
-                      const isThisPanel = l.id === ledgerId;
-                      const checked = isThisPanel || entryFilters.extraLedgerIds.includes(l.id);
-                      return (
-                        <label
-                          key={l.id}
-                          className="flex items-center gap-1 rounded-lg border border-border-strong px-2 py-1.5 text-ink-soft"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={isThisPanel}
-                            onChange={() =>
-                              setEntryFilters({
-                                ...entryFilters,
-                                extraLedgerIds: entryFilters.extraLedgerIds.includes(l.id)
-                                  ? entryFilters.extraLedgerIds.filter((id) => id !== l.id)
-                                  : [...entryFilters.extraLedgerIds, l.id],
-                              })
-                            }
-                          />
-                          {l.name}
-                        </label>
-                      );
-                    })}
+                    {ledgers.map((l) => (
+                      <label
+                        key={l.id}
+                        className="flex items-center gap-1 rounded-lg border border-border-strong px-2 py-1.5 text-ink-soft"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={entryFilters.ledgerIds.includes(l.id)}
+                          onChange={() => toggleLedgerFilter(l.id)}
+                        />
+                        {l.name}
+                      </label>
+                    ))}
                   </div>
                 </div>
               )}
@@ -805,7 +812,7 @@ function LedgerPanel({
                       description: "",
                       dateFrom: "",
                       dateTo: "",
-                      extraLedgerIds: [],
+                      ledgerIds: [ledgerId],
                     })
                   }
                   className="min-h-9 rounded-lg px-2 text-xs text-muted underline"
@@ -1069,7 +1076,7 @@ function LedgerPanel({
                                 ✂️
                               </span>
                             )}
-                            {entryFilters.extraLedgerIds.length > 0 && entry.ledger_id !== ledgerId && (
+                            {entry.ledger_id !== ledgerId && (
                               <span className="ml-1 rounded-full border border-border-strong px-1.5 py-0.5 text-[10px] text-muted">
                                 {ledgerNameById.get(entry.ledger_id) ?? "?"}
                               </span>
