@@ -352,3 +352,36 @@ o gatilho de quando revisitar.
     `tests/budget-summary.test.ts`, `tests/entries.test.ts` e
     `tests/installment-plans.test.ts` (dependem de banco — não puderam
     rodar neste sandbox, mesma limitação de sempre).
+- 🟡 **Bug: só o orçamento Principal "puxava" as parcelas pro mês seguinte**
+  (relatado 2026-10-05, investigado e parcialmente corrigido no mesmo
+  dia). Usuário criou um parcelamento noutro orçamento e, quando o mês
+  virou de verdade (cron automático, não o botão de teste), a parcela
+  seguinte nunca apareceu — só a do Principal avançou.
+  Revisão de ponta a ponta (criação do plano, resolução de categoria/
+  orçamento, avanço mensal) não achou nenhum trecho que trate o
+  Principal diferente dos demais. Causa mais provável encontrada:
+  `advanceInstallmentsForMonth` varre TODOS os planos de TODOS os
+  orçamentos/households numa passada só, mas processava cada um sem
+  isolamento — um erro não tratado num plano (categoria num estado
+  inesperado, valor inválido, falha pontual de banco) interrompia o
+  laço inteiro, deixando os planos SEGUINTES sem avançar naquele mês
+  (e sem nenhum aviso — a função só rejeitava, virando um 500 silencioso
+  pro cron). Como não há ORDER BY na consulta, não dá pra garantir que
+  o Principal sempre venha primeiro, mas é consistente com o sintoma
+  relatado. **Corrigido**: cada plano agora roda dentro de um try/catch
+  próprio (`src/lib/installment-plans/service.ts`) — uma falha vira uma
+  entrada em `errors` (nunca interrompe os demais), a função retorna
+  `{ created, failed, errors }` em vez de só `{ created }`, e o botão
+  "Avançar parcelas pra esse mês" mostra quantos falharam (detalhe no
+  console). Teste automatizado em
+  `tests/installment-plans.test.ts` força um plano com valor inválido
+  (violação do `CHECK (amount > 0)`) ao lado de um plano bom e confirma
+  que o bom avança mesmo assim.
+  **Ainda não confirmado 100%** — não tenho acesso ao banco de produção
+  pra verificar se essa foi de fato a causa (SQL de diagnóstico foi
+  passado ao usuário, resposta pendente). **Ação pendente do usuário**:
+  depois do deploy, voltar em `/installment-plans`, marcar o orçamento
+  afetado e clicar "Avançar parcelas pra esse mês" pro mês que ficou
+  faltando (ex: outubro) pra recuperar a parcela que não foi criada —
+  o avanço automático detecta e cria normalmente mesmo atrasado, mas
+  isso não acontece sozinho, precisa desse clique manual uma vez.

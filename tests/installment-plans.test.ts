@@ -387,3 +387,82 @@ describe("listInstallmentPlans / getInstallmentForecastGrid com vários orçamen
     expect(planBRow.ledgerId).toBe(ledgerBId);
   });
 });
+
+describe("advanceInstallmentsForMonth — um plano com problema nunca para o avanço dos demais", () => {
+  // Reproduz o relato do usuário: "só o orçamento Principal está puxando as
+  // compras parceladas" — a causa mais provável era um `throw` sem try/catch
+  // dentro do laço que varre TODOS os planos de TODOS os orçamentos numa
+  // chamada só: se o plano de um orçamento vier antes do de outro na mesma
+  // consulta e falhar, o laço parava ali, deixando os planos seguintes (de
+  // outros orçamentos) sem avançar naquele mês — exatamente como "só o
+  // primeiro orçamento processado funciona".
+  let householdId: string;
+  let ledgerId: string;
+  let categoryId: string;
+  let goodPlanId: string;
+  let badPlanId: string;
+
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_installments_resilient__') RETURNING id`,
+    );
+    householdId = rows[0].id;
+
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerId = ledgerRows[0].id;
+
+    const cat = await createCategory(householdId, ledgerId, { name: "Assinaturas" });
+    if (cat.status !== "created") throw new Error("setup failed");
+    categoryId = cat.category.id;
+
+    const good = await createInstallmentPlan(householdId, {
+      ledgerId,
+      description: "Plano bom",
+      categoryId,
+      installmentAmount: 10,
+      totalInstallments: 6,
+      currentInstallmentNumber: 1,
+      currentInstallmentDate: "2026-09-10",
+    });
+    if (good.status !== "created") throw new Error("setup failed");
+    goodPlanId = good.plan.id;
+
+    // Inserido direto via SQL (não por createInstallmentPlan, que recusaria
+    // um valor <= 0) pra simular um plano num estado inválido — qualquer
+    // problema real de categoria/orçamento cairia no mesmo try/catch.
+    // financial_entries.amount tem CHECK (amount > 0): tentar criar a
+    // parcela desse plano sempre falha na gravação.
+    const { rows: badPlanRows } = await pool.query<{ id: string }>(
+      `INSERT INTO installment_plans (household_id, ledger_id, description, category_id, installment_amount, total_installments, anchor_month)
+       VALUES ($1, $2, 'Plano com valor inválido', $3, 0, 6, '2026-09-01') RETURNING id`,
+      [householdId, ledgerId, categoryId],
+    );
+    badPlanId = badPlanRows[0].id;
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM installment_plans WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    await pool.end();
+  });
+
+  it("não lança exceção, avança o plano bom e reporta o ruim em errors", async () => {
+    const result = await advanceInstallmentsForMonth("2026-10");
+
+    const goodEntry = await pool.query(
+      `SELECT 1 FROM financial_entries WHERE installment_plan_id = $1 AND entry_date = '2026-10-01'`,
+      [goodPlanId],
+    );
+    expect(goodEntry.rows).toHaveLength(1);
+
+    expect(result.created).toBeGreaterThanOrEqual(1);
+    expect(result.failed).toBeGreaterThanOrEqual(1);
+    expect(result.errors.some((e) => e.planId === badPlanId)).toBe(true);
+  });
+});

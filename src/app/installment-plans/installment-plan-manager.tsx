@@ -41,10 +41,20 @@ export function InstallmentPlanManager({ initialPlans }: { initialPlans: PlanWit
         return;
       }
       setAdvanceResult(
-        data.created > 0
-          ? `${data.created} parcela(s) lançada(s) em ${formatMonthLabel(data.month)}. Veja em "Lançamentos", navegando até esse mês.`
-          : `Nenhuma parcela nova em ${formatMonthLabel(data.month)} (já lançada antes, ou nenhum plano ativo cai nesse mês).`,
+        [
+          data.created > 0
+            ? `${data.created} parcela(s) lançada(s) em ${formatMonthLabel(data.month)}. Veja em "Lançamentos", navegando até esse mês.`
+            : `Nenhuma parcela nova em ${formatMonthLabel(data.month)} (já lançada antes, ou nenhum plano ativo cai nesse mês).`,
+          data.failed > 0
+            ? `${data.failed} plano(s) falharam e não avançaram — detalhes no console do navegador.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
+      if (data.failed > 0) {
+        console.error("Planos que falharam ao avançar:", data.errors);
+      }
     } finally {
       setAdvancing(false);
     }

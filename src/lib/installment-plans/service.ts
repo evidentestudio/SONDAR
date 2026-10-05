@@ -323,6 +323,8 @@ type DuePlanRow = {
  */
 export async function advanceInstallmentsForMonth(monthKey: string = currentMonthKey()): Promise<{
   created: number;
+  failed: number;
+  errors: { planId: string; ledgerId: string; message: string }[];
 }> {
   const monthDate = monthToDbDate(monthKey);
 
@@ -351,31 +353,48 @@ export async function advanceInstallmentsForMonth(monthKey: string = currentMont
   );
 
   let created = 0;
+  const errors: { planId: string; ledgerId: string; message: string }[] = [];
   for (const plan of due) {
-    // The category chosen when the plan was created might have gained
-    // subcategories (no longer a leaf) or been deleted since — fall back to
-    // "Aguardando Revisão" rather than silently violating the leaf-only rule
-    // or crashing the whole job over one plan.
-    let categoryId = plan.category_id;
-    if (!(await isLeafCategory(plan.household_id, plan.ledger_id, categoryId))) {
-      categoryId = await ensureAwaitingReviewCategory(plan.household_id, plan.ledger_id);
-    }
+    // Cada plano é isolado: um erro aqui (categoria/orçamento num estado
+    // inesperado, falha pontual de banco) nunca pode interromper o laço e
+    // deixar os planos SEGUINTES sem processar — esse é o único job que
+    // varre todo household/orçamento numa passada só, então um `throw` sem
+    // tratamento aqui silenciosamente pararia o avanço de todo mundo que
+    // viesse depois do plano com problema na mesma rodada.
+    try {
+      // The category chosen when the plan was created might have gained
+      // subcategories (no longer a leaf) or been deleted since — fall back
+      // to "Aguardando Revisão" rather than silently violating the
+      // leaf-only rule or crashing the whole job over one plan.
+      let categoryId = plan.category_id;
+      if (!(await isLeafCategory(plan.household_id, plan.ledger_id, categoryId))) {
+        categoryId = await ensureAwaitingReviewCategory(plan.household_id, plan.ledger_id);
+      }
 
-    const result = await createEntry(plan.household_id, {
-      ledgerId: plan.ledger_id,
-      entryType: "expense",
-      entryDate: monthDate,
-      description: withInstallmentSuffix(plan.description, plan.installment_number, plan.total_installments),
-      amount: Number(plan.installment_amount),
-      categoryId,
-      paymentSourceId: plan.payment_source_id,
-      inputMethod: "manual",
-      reviewStatus: "confirmed",
-      installmentPlanId: plan.id,
-      installmentNumber: plan.installment_number,
-    });
-    if (result.status === "created") created += 1;
+      const result = await createEntry(plan.household_id, {
+        ledgerId: plan.ledger_id,
+        entryType: "expense",
+        entryDate: monthDate,
+        description: withInstallmentSuffix(plan.description, plan.installment_number, plan.total_installments),
+        amount: Number(plan.installment_amount),
+        categoryId,
+        paymentSourceId: plan.payment_source_id,
+        inputMethod: "manual",
+        reviewStatus: "confirmed",
+        installmentPlanId: plan.id,
+        installmentNumber: plan.installment_number,
+      });
+      if (result.status === "created") {
+        created += 1;
+      } else {
+        errors.push({ planId: plan.id, ledgerId: plan.ledger_id, message: result.message });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`advanceInstallmentsForMonth: falha no plano ${plan.id} (ledger ${plan.ledger_id}):`, err);
+      errors.push({ planId: plan.id, ledgerId: plan.ledger_id, message });
+    }
   }
 
-  return { created };
+  return { created, failed: errors.length, errors };
 }
