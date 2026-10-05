@@ -848,35 +848,53 @@ function PanelStatCells({
   const restante = orcado - gasto;
   const pct = progressPct(gasto, orcado);
   const color = statusColor(gasto, orcado);
-  const restanteNegative = restante < 0;
+  // Restante usa a mesma cor de status do Progresso (pedido do usuário —
+  // "deve mudar de cor junto seguindo as cores da coluna progresso"), só
+  // como pílula em vez de barra: color-mix gera o fundo claro a partir da
+  // mesma cor sólida do texto/barra, sem precisar de um token novo por
+  // status.
+  const restantePillStyle = {
+    background: `color-mix(in srgb, ${color} 18%, var(--card))`,
+    // Texto escurecido em cima da cor de status (mesmo padrão de
+    // --row-awaiting-bg/--row-awaiting-text já usado no app: fundo claro,
+    // texto bem mais escuro que a cor pura) — necessário porque
+    // --status-yellow sozinho não tem contraste suficiente como texto.
+    color: `color-mix(in srgb, ${color} 65%, black)`,
+  };
   return (
     <>
-      <td className="money py-2 text-right text-ink-soft">{formatBRL(orcado)}</td>
+      {/* Orçado: preto e em negrito de propósito — "imobilidade", é o valor
+       * que não muda sozinho, só por edição manual do orçamento. */}
+      <td className="money py-2 text-right font-bold text-ink">{formatBRL(orcado)}</td>
       <td className="py-2 text-right">
-        {gastoClickable ? (
+        {gasto === 0 ? (
+          gastoClickable ? (
+            <button
+              type="button"
+              onClick={onGastoClick}
+              className="money underline decoration-dotted text-ink-soft"
+            >
+              {formatBRL(0)}
+            </button>
+          ) : (
+            <span className="money text-ink-soft">{formatBRL(0)}</span>
+          )
+        ) : gastoClickable ? (
           <button
             type="button"
             onClick={onGastoClick}
-            className="money underline decoration-dotted"
-            style={{ color: gasto === 0 ? undefined : color }}
+            className="money inline-block rounded-full bg-rust-light px-2 py-0.5 text-rust underline decoration-dotted"
           >
-            {formatBRL(gasto)}
+            {formatBRL(-gasto)}
           </button>
         ) : (
-          <span className="money" style={{ color: gasto === 0 ? undefined : color }}>
-            {formatBRL(gasto)}
+          <span className="money inline-block rounded-full bg-rust-light px-2 py-0.5 text-rust">
+            {formatBRL(-gasto)}
           </span>
         )}
       </td>
       <td className="py-2 text-right">
-        <span
-          className="money inline-block rounded-full px-2 py-0.5 text-xs"
-          style={
-            restanteNegative
-              ? { background: "var(--row-awaiting-bg)", color: "var(--row-awaiting-text)" }
-              : { background: "var(--row-blue-bg)", color: "var(--row-blue-text)" }
-          }
-        >
+        <span className="money inline-block rounded-full px-2 py-0.5 text-xs" style={restantePillStyle}>
           {formatBRL(restante)}
         </span>
       </td>

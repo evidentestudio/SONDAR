@@ -400,3 +400,20 @@ o gatilho de quando revisitar.
   tela Geral sempre teve um seletor de orçamento pra mandar o
   lançamento pra qualquer um deles. O usuário perguntou se não seria
   melhor assim — já é, não precisou mudar nada de funcional aqui.
+- ✅ **Painel: cores por coluna pra separar Orçado/Gasto/Restante**
+  (2026-10-06, pedido com captura de tela anotada). Orçado virou
+  preto e negrito ("imobilidade" — valor que só muda por edição
+  manual). Gasto virou uma pílula vermelha (`bg-rust-light`/`text-rust`,
+  par já usado em erro/exclusão no resto do app) com sinal de menos
+  (`formatBRL(-gasto)`, deixa o `Intl.NumberFormat` posicionar o sinal
+  certo pro pt-BR) — exceto quando o gasto é zero, que fica em texto
+  simples cinza (nada foi gasto, não tem por que destacar). Restante
+  passou a usar a MESMA cor de status do Progresso
+  (`statusColor(gasto, orcado)`, já existia) em vez da lógica antiga
+  de "negativo = vermelho fixo, positivo = azul fixo" — como pedido,
+  "deve mudar de cor junto seguindo as cores da coluna progresso". A
+  pílula do Restante é gerada com `color-mix()` a partir dessa mesma
+  cor (fundo claro, texto escurecido) em vez de depender de um token
+  novo por status; o texto é escurecido (não a cor pura) porque
+  `--status-yellow` sozinho não tem contraste suficiente como texto
+  numa pílula clara.
