@@ -385,3 +385,18 @@ o gatilho de quando revisitar.
   faltando (ex: outubro) pra recuperar a parcela que não foi criada —
   o avanço automático detecta e cria normalmente mesmo atrasado, mas
   isso não acontece sozinho, precisa desse clique manual uma vez.
+- ✅ **Tela de Lançamentos separada visualmente do filtro/lista** (2026-10-05)
+  — pedido do usuário com captura de tela marcando onde o bloco de
+  lançar devia terminar. Antes "Lançamentos" (título + botões +NOVO/
+  Imagem/Foto/Falar + formulário de novo lançamento) e "Filtrar
+  lançamentos" (filtros + tabela) eram um único card. Agora são dois
+  cards separados: o de lançar ganhou fundo `bg-accent-light` (verde
+  bem claro, já parte da paleta — mesmo tom usado em chips selecionados
+  no Painel) pra se diferenciar sem destoar; o de filtro/lista continua
+  branco (`bg-card`), como todos os outros cards da tela.
+  Confirmado nessa mesma conversa: lançar já só acontece pela tela
+  Geral (Principal) — os orçamentos auxiliares (painéis recolhíveis)
+  nunca tiveram os botões de lançar/IA, só visualizam; o formulário da
+  tela Geral sempre teve um seletor de orçamento pra mandar o
+  lançamento pra qualquer um deles. O usuário perguntou se não seria
+  melhor assim — já é, não precisou mudar nada de funcional aqui.

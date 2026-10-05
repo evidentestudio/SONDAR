@@ -625,7 +625,7 @@ function LedgerPanel({
         />
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl border border-border bg-accent-light p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <h3 className="font-serif text-lg text-ink">Lançamentos</h3>
           <button
@@ -698,28 +698,29 @@ function LedgerPanel({
           </div>
         )}
 
-        {!entriesCollapsed && (
-          <>
-            {showAddEntry && (
-              <EntryForm
-                month={month}
-                initialLeaves={leaves}
-                ledgers={ledgers}
-                defaultLedgerId={ledgerId}
-                paymentSources={paymentSources}
-                initialCategoryId={presetCategoryId}
-                onCancel={() => {
-                  setShowAddEntry(false);
-                  setPresetCategoryId(null);
-                }}
-                onSubmit={submitEntry}
-              />
-            )}
+        {!entriesCollapsed && showAddEntry && (
+          <EntryForm
+            month={month}
+            initialLeaves={leaves}
+            ledgers={ledgers}
+            defaultLedgerId={ledgerId}
+            paymentSources={paymentSources}
+            initialCategoryId={presetCategoryId}
+            onCancel={() => {
+              setShowAddEntry(false);
+              setPresetCategoryId(null);
+            }}
+            onSubmit={submitEntry}
+          />
+        )}
+      </div>
 
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
-              Filtrar lançamentos
-            </p>
-            <div className="mb-3 flex flex-wrap items-end gap-2">
+      {!entriesCollapsed && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
+            Filtrar lançamentos
+          </p>
+          <div className="mb-3 flex flex-wrap items-end gap-2">
               <label className="flex flex-col gap-0.5 text-xs text-muted">
                 Categoria
                 <select
@@ -1135,9 +1136,8 @@ function LedgerPanel({
                 </table>
               </div>
             )}
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex flex-col rounded-xl border border-border bg-card">
         {categories.length === 0 && (
