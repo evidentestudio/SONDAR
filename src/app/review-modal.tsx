@@ -796,7 +796,7 @@ export function ReviewModal({
                       </label>
                     )}
                     <label className="flex flex-1 flex-col gap-0.5 text-xs text-muted">
-                      Forma de pagamento
+                      Meio de pagamento
                       <select
                         value={row.paymentSourceId}
                         onChange={(e) => updateRow(row.key, { paymentSourceId: e.target.value })}

@@ -417,3 +417,27 @@ o gatilho de quando revisitar.
   novo por status; o texto é escurecido (não a cor pura) porque
   `--status-yellow` sozinho não tem contraste suficiente como texto
   numa pílula clara.
+- ✅ **"Forma" renomeado para "Meio" + novo filtro "Modalidade"**
+  (2026-10-13). Pedido do usuário: o que hoje se chama "forma" (forma
+  de pagamento — cartão, boleto, pix etc.) passa a se chamar "Meio" em
+  todo o app, não só no filtro de Lançamentos. Renomeado em:
+  nav (`Formas` → `Meios`), título da tela `/payment-sources`
+  (`Formas de pagamento` → `Meios de pagamento`), botão/placeholder/
+  mensagem vazia de `payment-source-manager.tsx`, mensagens de erro em
+  `src/lib/payment-sources/service.ts` ("já existe", "não encontrada"),
+  rótulo e opção do seletor no filtro e na tabela de Lançamentos
+  (`month-view.tsx`), no modal de revisão (`review-modal.tsx`), na fila
+  de revisão (`review-queue-manager.tsx`) e na projeção de parcelas
+  (`installment-forecast.tsx`). **Decisão de escopo**: só o texto
+  exibido mudou — identificadores internos (`paymentSourceId`,
+  `PaymentSourceRow`, tabela `payment_sources`) continuam com o nome
+  antigo, já que o pedido foi sobre como a funcionalidade é chamada pro
+  usuário, não um reflexo de banco/código. Também não mexi na política
+  de privacidade (menciona "formas de pagamento" ao listar categorias
+  de dados) — mudar texto legal pede controle de versão
+  (`PRIVACY_POLICY_VERSION`), fora do escopo deste pedido.
+  Novo filtro **Modalidade** (À vista / Parcelado) adicionado na mesma
+  linha de filtros de Lançamentos, ao lado de Meio — é puramente
+  client-side: `entries` já trazem `installment_plan_id`, então o
+  filtro só compara se esse campo é nulo (à vista) ou preenchido
+  (parcelado), sem precisar de nenhuma mudança de API/banco.

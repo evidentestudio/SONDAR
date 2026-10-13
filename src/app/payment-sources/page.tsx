@@ -17,7 +17,7 @@ export default async function PaymentSourcesPage() {
           <Link href="/" className="text-sm text-muted hover:text-ink">
             ← Início
           </Link>
-          <h1 className="font-serif text-xl text-ink">Formas de pagamento</h1>
+          <h1 className="font-serif text-xl text-ink">Meios de pagamento</h1>
         </div>
         <span className="text-sm text-ink-soft">{session.displayName ?? session.email}</span>
       </header>

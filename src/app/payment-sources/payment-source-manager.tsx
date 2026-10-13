@@ -89,7 +89,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
         onClick={() => setAdding((v) => !v)}
         className="min-h-11 w-fit rounded-lg bg-accent px-4 text-sm font-medium text-white"
       >
-        + Nova forma de pagamento
+        + Novo meio de pagamento
       </button>
 
       {adding && (
@@ -111,7 +111,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Nome da forma de pagamento"
+            placeholder="Nome do meio de pagamento"
             className="min-h-11 flex-1 rounded-lg border border-border-strong px-3 text-sm outline-none focus:border-accent"
           />
           <label className="flex items-center gap-1 text-xs text-ink-soft">
@@ -133,7 +133,7 @@ export function PaymentSourceManager({ initialSources }: { initialSources: Payme
 
       <div className="flex flex-col rounded-xl border border-border bg-card">
         {sources.length === 0 && (
-          <p className="px-4 py-6 text-center text-sm text-muted">Nenhuma forma de pagamento ainda.</p>
+          <p className="px-4 py-6 text-center text-sm text-muted">Nenhum meio de pagamento ainda.</p>
         )}
         {sources.map((s) =>
           editing?.id === s.id ? (

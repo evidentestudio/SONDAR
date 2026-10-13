@@ -40,7 +40,7 @@ export default async function Home() {
             Categorias
           </Link>
           <Link href="/payment-sources" className="text-sm text-accent-dark hover:underline">
-            Formas
+            Meios
           </Link>
           <Link href="/notes" className="text-sm text-accent-dark hover:underline">
             Notas

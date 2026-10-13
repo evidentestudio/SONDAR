@@ -182,6 +182,9 @@ function LedgerPanel({
   const [entryFilters, setEntryFilters] = useState<{
     categoryId: string;
     paymentSourceId: string;
+    /** Á vista (sem installment_plan_id) vs. parcelado (com) — filtro puramente
+     * client-side, os lançamentos já trazem installment_plan_id. */
+    modalidade: "" | "a_vista" | "parcelado";
     description: string;
     dateFrom: string;
     dateTo: string;
@@ -195,6 +198,7 @@ function LedgerPanel({
   }>({
     categoryId: "",
     paymentSourceId: "",
+    modalidade: "",
     description: "",
     dateFrom: "",
     dateTo: "",
@@ -265,6 +269,7 @@ function LedgerPanel({
   const hasActiveFilter =
     entryFilters.categoryId !== "" ||
     entryFilters.paymentSourceId !== "" ||
+    entryFilters.modalidade !== "" ||
     entryFilters.description !== "" ||
     entryFilters.dateFrom !== "" ||
     entryFilters.dateTo !== "" ||
@@ -273,6 +278,8 @@ function LedgerPanel({
   const filteredEntries = entries.filter((e) => {
     if (entryFilters.categoryId && e.category_id !== entryFilters.categoryId) return false;
     if (entryFilters.paymentSourceId && e.payment_source_id !== entryFilters.paymentSourceId) return false;
+    if (entryFilters.modalidade === "a_vista" && e.installment_plan_id) return false;
+    if (entryFilters.modalidade === "parcelado" && !e.installment_plan_id) return false;
     if (
       entryFilters.description &&
       !e.description.toLowerCase().includes(entryFilters.description.toLowerCase())
@@ -737,18 +744,35 @@ function LedgerPanel({
                 </select>
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-muted">
-                Forma
+                Meio
                 <select
                   value={entryFilters.paymentSourceId}
                   onChange={(e) => setEntryFilters({ ...entryFilters, paymentSourceId: e.target.value })}
                   className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
                 >
-                  <option value="">Todas</option>
+                  <option value="">Todos</option>
                   {paymentSources.map((ps) => (
                     <option key={ps.id} value={ps.id}>
                       {ps.name}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-0.5 text-xs text-muted">
+                Modalidade
+                <select
+                  value={entryFilters.modalidade}
+                  onChange={(e) =>
+                    setEntryFilters({
+                      ...entryFilters,
+                      modalidade: e.target.value as "" | "a_vista" | "parcelado",
+                    })
+                  }
+                  className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
+                >
+                  <option value="">Todas</option>
+                  <option value="a_vista">À vista</option>
+                  <option value="parcelado">Parcelado</option>
                 </select>
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-muted">
@@ -806,6 +830,7 @@ function LedgerPanel({
                     setEntryFilters({
                       categoryId: "",
                       paymentSourceId: "",
+                      modalidade: "",
                       description: "",
                       dateFrom: "",
                       dateTo: "",
@@ -853,7 +878,7 @@ function LedgerPanel({
                       <th className="py-2">Data</th>
                       <th className="py-2">Descrição</th>
                       <th className="py-2">Categoria</th>
-                      <th className="py-2">Forma</th>
+                      <th className="py-2">Meio</th>
                       <th className="py-2 text-right">Valor</th>
                       <th className="py-2" />
                     </tr>
@@ -1006,7 +1031,7 @@ function LedgerPanel({
                               title={editingEntry.entryType === "income" ? "Não se aplica a crédito" : undefined}
                               className="min-h-9 w-full rounded border border-border-strong px-1 text-sm disabled:bg-paper disabled:text-muted"
                             >
-                              <option value="">Forma de pagamento (opcional)</option>
+                              <option value="">Meio de pagamento (opcional)</option>
                               {paymentSources.map((ps) => (
                                 <option key={ps.id} value={ps.id}>
                                   {ps.name}
@@ -1177,9 +1202,9 @@ function LedgerPanel({
       </div>
 
       <div className="rounded-xl border border-border bg-card p-4">
-        <h3 className="mb-3 font-serif text-lg text-ink">Total por forma de pagamento</h3>
+        <h3 className="mb-3 font-serif text-lg text-ink">Total por meio de pagamento</h3>
         {paymentSourceTotals.length === 0 ? (
-          <p className="text-sm text-muted">Nenhum lançamento com forma de pagamento definida neste mês.</p>
+          <p className="text-sm text-muted">Nenhum lançamento com meio de pagamento definido neste mês.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {paymentSourceTotals.map((p) => (
@@ -1601,7 +1626,7 @@ function EntryForm({
           title={entryType === "income" ? "Não se aplica a crédito" : undefined}
           className="min-h-11 flex-1 rounded-lg border border-border-strong px-2 text-sm disabled:bg-paper disabled:text-muted"
         >
-          <option value="">Forma de pagamento (opcional)</option>
+          <option value="">Meio de pagamento (opcional)</option>
           {paymentSources.map((ps) => (
             <option key={ps.id} value={ps.id}>
               {ps.name}

@@ -66,7 +66,7 @@ export function InstallmentForecast({
             onChange={(e) => setPaymentSourceId(e.target.value)}
             className="min-h-9 rounded-lg border border-border-strong px-2 text-sm"
           >
-            <option value="">Todas as formas</option>
+            <option value="">Todos os meios</option>
             {paymentSources.map((ps) => (
               <option key={ps.id} value={ps.id}>
                 {ps.name}
@@ -109,7 +109,7 @@ export function InstallmentForecast({
                           <div className="max-w-40 truncate text-ink">{plan.description}</div>
                           <div className="truncate text-xs text-muted">
                             {showLedgerBadge ? `${ledgerNameById[plan.ledgerId] ?? "?"} · ` : ""}
-                            {plan.paymentSourceName ?? "Sem forma definida"}
+                            {plan.paymentSourceName ?? "Sem meio definido"}
                           </div>
                         </td>
                         {grid.months.map((m) => {

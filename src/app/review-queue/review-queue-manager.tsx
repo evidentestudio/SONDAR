@@ -209,13 +209,13 @@ export function ReviewQueueManager({
               )}
               {row.entryType === "expense" && (
                 <label className="flex min-w-36 flex-col gap-0.5 text-xs text-muted">
-                  Forma
+                  Meio
                   <select
                     value={row.paymentSourceId}
                     onChange={(e) => updateRow(row.id, { paymentSourceId: e.target.value })}
                     className="min-h-9 rounded border border-border-strong px-1 text-sm"
                   >
-                    <option value="">Forma de pagamento (opcional)</option>
+                    <option value="">Meio de pagamento (opcional)</option>
                     {paymentSources.map((ps) => (
                       <option key={ps.id} value={ps.id}>
                         {ps.name}
