@@ -7,6 +7,8 @@ import {
   updateEntry,
   listEntriesForReview,
   markEntryReviewed,
+  findDuplicateCandidates,
+  dismissDuplicatePair,
 } from "@/lib/entries/service";
 
 const pool = getPool();
@@ -323,5 +325,123 @@ describe("listEntries com vários orçamentos (visão combinada do Painel)", () 
     const byDescription = Object.fromEntries(combined.map((e) => [e.description, e.ledger_id]));
     expect(byDescription["Compra A"]).toBe(ledgerAId);
     expect(byDescription["Compra B"]).toBe(ledgerBId);
+  });
+});
+
+describe("buscador de lançamentos duplicados (findDuplicateCandidates)", () => {
+  let householdId: string;
+  let ledgerId: string;
+  let categoryId: string;
+
+  beforeAll(async () => {
+    const { rows } = await pool.query<{ id: string }>(
+      `INSERT INTO households (name) VALUES ('__test_household_duplicates__') RETURNING id`,
+    );
+    householdId = rows[0].id;
+
+    const { rows: ledgerRows } = await pool.query<{ id: string }>(
+      `INSERT INTO ledgers (household_id, name, is_default) VALUES ($1, 'Principal', true) RETURNING id`,
+      [householdId],
+    );
+    ledgerId = ledgerRows[0].id;
+
+    const cat = await createCategory(householdId, ledgerId, { name: "Mercado" });
+    if (cat.status !== "created") throw new Error("setup failed");
+    categoryId = cat.category.id;
+  });
+
+  afterAll(async () => {
+    await pool.query(`DELETE FROM installment_plans WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM financial_entries WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM categories WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM ledgers WHERE household_id = $1`, [householdId]);
+    await pool.query(`DELETE FROM households WHERE id = $1`, [householdId]);
+    await pool.end();
+  });
+
+  it("mesma categoria + valor idêntico + mesmo mês vira candidato 'mesma_categoria_valor_identico'", async () => {
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-05",
+      description: "Mercado Dia 5",
+      amount: 150,
+      categoryId,
+    });
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-09-20",
+      description: "Mercado Dia 20, nada a ver",
+      amount: 150,
+      categoryId,
+    });
+
+    const pairs = await findDuplicateCandidates(householdId, ledgerId);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].reasons).toEqual(["mesma_categoria_valor_identico"]);
+  });
+
+  it("descrição parecida + valor e data próximos vira candidato 'descricao_parecida', mesmo em categorias diferentes", async () => {
+    const catB = await createCategory(householdId, ledgerId, { name: "Farmácia" });
+    if (catB.status !== "created") throw new Error("setup failed");
+
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-10-01",
+      description: "Padaria Pao de Acucar",
+      amount: 42,
+      categoryId: catB.category.id,
+    });
+    await createEntry(householdId, {
+      ledgerId,
+      entryType: "expense",
+      entryDate: "2026-10-02",
+      description: "Padaria Pão de Açúcar",
+      amount: 43,
+      categoryId,
+    });
+
+    const pairs = await findDuplicateCandidates(householdId, ledgerId);
+    const padaria = pairs.find((p) => p.entryA.description.startsWith("Padaria"));
+    expect(padaria).toBeDefined();
+    expect(padaria!.reasons).toEqual(["descricao_parecida"]);
+  });
+
+  it("nunca junta duas parcelas diferentes da mesma compra (mesmo installment_plan_id)", async () => {
+    const { rows: planRows } = await pool.query<{ id: string }>(
+      `INSERT INTO installment_plans
+         (household_id, ledger_id, description, category_id, installment_amount, total_installments, anchor_month)
+       VALUES ($1, $2, 'Geladeira parcelada', $3, 100, 6, '2026-11-01')
+       RETURNING id`,
+      [householdId, ledgerId, categoryId],
+    );
+    const planId = planRows[0].id;
+
+    await pool.query(
+      `INSERT INTO financial_entries
+         (household_id, ledger_id, entry_type, entry_date, description, amount, category_id,
+          installment_plan_id, installment_number)
+       VALUES
+         ($1, $2, 'expense', '2026-11-01', 'Geladeira parcelada (1/6)', 100, $3, $4, 1),
+         ($1, $2, 'expense', '2026-11-02', 'Geladeira parcelada (2/6)', 100, $3, $4, 2)`,
+      [householdId, ledgerId, categoryId, planId],
+    );
+
+    const pairs = await findDuplicateCandidates(householdId, ledgerId);
+    const geladeira = pairs.find((p) => p.entryA.description.includes("Geladeira"));
+    expect(geladeira).toBeUndefined();
+  });
+
+  it("dismissDuplicatePair faz o par nunca mais reaparecer", async () => {
+    const before = await findDuplicateCandidates(householdId, ledgerId);
+    const mercado = before.find((p) => p.entryA.description.startsWith("Mercado"));
+    expect(mercado).toBeDefined();
+
+    await dismissDuplicatePair(householdId, mercado!.entryA.id, mercado!.entryB.id);
+
+    const after = await findDuplicateCandidates(householdId, ledgerId);
+    expect(after.find((p) => p.entryA.description.startsWith("Mercado"))).toBeUndefined();
   });
 });

@@ -441,3 +441,41 @@ o gatilho de quando revisitar.
   client-side: `entries` já trazem `installment_plan_id`, então o
   filtro só compara se esse campo é nulo (à vista) ou preenchido
   (parcelado), sem precisar de nenhuma mudança de API/banco.
+- 🟡 **Buscador de lançamentos duplicados** (2026-10-19) — botão
+  "🔍 Buscar duplicados" no card de Filtrar lançamentos (um por
+  orçamento, igual ao filtro de Modalidade). Sob demanda (nunca
+  automático, mesma filosofia do Radar Financeiro), varre TODOS os
+  meses daquele orçamento (não só o mês aberto na tela) atrás de pares
+  suspeitos, por dois critérios independentes (`findDuplicateCandidates`,
+  `src/lib/entries/service.ts`):
+  - **Mesma categoria + valor idêntico + mesmo mês** — mesmo critério que
+    já existia em `checkPossibleDuplicate` (usado só na hora de criar um
+    lançamento novo via IA), agora aplicado pra achar TODOS os pares já
+    existentes na base.
+  - **Descrição parecida + valor dentro de ±20% + data dentro de 3 dias**
+    — mesma tolerância que `findReconciliationCandidate` já usa pra
+    fundir rascunho de áudio com fatura; reaproveita `normalizeStr`/
+    `fuzzyMatch` (`src/lib/text/normalize.ts`), já usado pra regras de
+    estabelecimento.
+  - Nunca junta duas parcelas diferentes da mesma compra (mesmo
+    `installment_plan_id`) nem partes da mesma divisão (mesmo
+    `split_group_id`) — pedido explícito do usuário pras parcelas; a
+    exclusão de divisão foi extensão minha pelo mesmo motivo (lançamentos
+    múltiplos legítimos de uma única compra).
+  - Cada par mostra os dois lançamentos lado a lado com dois botões:
+    **Ignorar** (marca o par como "não é duplicado" pra sempre — nunca
+    mais reaparece em buscas futuras) e **Excluir** em cada lançamento
+    (reaproveita a mesma exclusão da tabela de Lançamentos normal).
+    "Ignorar" é persistido (não é só escondido na tela) porque o usuário
+    pediu a ação como parte do fluxo normal, não como atalho de sessão —
+    mesmo padrão de "Não me avise mais" dos avisos de lacuna de registro.
+  - **Nova tabela `duplicate_dismissals`** (`db/013_duplicate_dismissals.sql`,
+    **AINDA NÃO APLICADA EM PRODUÇÃO** — precisa rodar manualmente no
+    Neon antes do próximo deploy valer pra essa funcionalidade) — guarda
+    os pares ignorados (`entry_id_a < entry_id_b` em ordem canônica,
+    única por par), RLS por household igual às demais tabelas.
+  - Testes em `tests/entries.test.ts` (descreve
+    "buscador de lançamentos duplicados") cobrindo os dois critérios, a
+    exclusão de parcelas da mesma compra e o "ignorar" persistente —
+    dependem de banco, não puderam rodar neste sandbox (mesma limitação
+    de sempre).

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CategorySummaryNode } from "@/lib/budget-summary/service";
-import type { EntryRow, EntryType } from "@/lib/entries/service";
+import type { DuplicateCandidate, DuplicateReason, EntryRow, EntryType } from "@/lib/entries/service";
 import type { PaymentSourceRow } from "@/lib/payment-sources/service";
 import type { LedgerRow } from "@/lib/ledgers/service";
 import { formatMonthLabel, nextMonthKey, previousMonthKey } from "@/lib/date";
@@ -258,6 +258,12 @@ function LedgerPanel({
     parts: { key: string; categoryId: string; amount: string }[];
   } | null>(null);
   const [splitError, setSplitError] = useState<string | null>(null);
+  // Buscador de lançamentos duplicados — sob demanda (botão), nunca
+  // automático, mesma filosofia do Radar Financeiro. null = ainda não
+  // buscou nesta visita à tela; [] = buscou e não achou nada.
+  const [duplicates, setDuplicates] = useState<DuplicateCandidate[] | null>(null);
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
+  const [duplicatesError, setDuplicatesError] = useState<string | null>(null);
   const skipNextLoad = useRef(!!initialData);
 
   const leaves = flattenLeafCategories(categories);
@@ -351,6 +357,47 @@ function LedgerPanel({
       ...f,
       ledgerIds: f.ledgerIds.includes(id) ? f.ledgerIds.filter((x) => x !== id) : [...f.ledgerIds, id],
     }));
+  }
+
+  /** Busca sob demanda (botão) — nunca automática ao abrir a tela. Varre
+   * TODOS os meses deste orçamento, não só o mês aberto agora. */
+  async function searchDuplicates() {
+    setDuplicatesError(null);
+    setDuplicatesLoading(true);
+    try {
+      const res = await fetch(`/api/entries/duplicates?ledgerId=${ledgerId}`);
+      if (!res.ok) {
+        setDuplicatesError("Não foi possível buscar duplicados.");
+        return;
+      }
+      const data = await res.json();
+      setDuplicates(data.pairs ?? []);
+    } finally {
+      setDuplicatesLoading(false);
+    }
+  }
+
+  /** "Ignorar" — marca o par como não-duplicado pra sempre (nunca mais
+   * reaparece em buscas futuras, ver duplicate_dismissals). */
+  async function ignoreDuplicatePair(entryIdA: string, entryIdB: string) {
+    setDuplicates((prev) =>
+      prev ? prev.filter((p) => !(p.entryA.id === entryIdA && p.entryB.id === entryIdB)) : prev,
+    );
+    await fetch("/api/entries/duplicates/dismiss", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryIdA, entryIdB }),
+    });
+  }
+
+  /** "Excluir" um dos dois lançamentos do par — reaproveita removeEntry
+   * (mesma exclusão da tabela de Lançamentos normal) e tira qualquer outro
+   * par pendente que mencione esse lançamento da lista exibida. */
+  async function deleteDuplicateEntry(id: string) {
+    setDuplicates((prev) =>
+      prev ? prev.filter((p) => p.entryA.id !== id && p.entryB.id !== id) : prev,
+    );
+    await removeEntry(id);
   }
 
   async function copyPreviousBudget() {
@@ -844,6 +891,37 @@ function LedgerPanel({
               )}
             </div>
 
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={searchDuplicates}
+                disabled={duplicatesLoading}
+                className="min-h-9 rounded-lg border border-border-strong px-3 text-xs text-accent-dark disabled:opacity-50"
+              >
+                {duplicatesLoading ? "Buscando..." : "🔍 Buscar duplicados"}
+              </button>
+              {duplicates !== null && (
+                <span className="text-xs text-muted">
+                  {duplicates.length === 0
+                    ? "Nenhum duplicado encontrado."
+                    : `${duplicates.length} par(es) suspeito(s) encontrado(s).`}
+                </span>
+              )}
+            </div>
+            {duplicatesError && <p className="mb-3 text-sm text-rust">{duplicatesError}</p>}
+            {duplicates !== null && duplicates.length > 0 && (
+              <div className="mb-3 flex flex-col gap-2">
+                {duplicates.map((pair) => (
+                  <DuplicatePairCard
+                    key={`${pair.entryA.id}:${pair.entryB.id}`}
+                    pair={pair}
+                    onIgnore={() => ignoreDuplicatePair(pair.entryA.id, pair.entryB.id)}
+                    onDelete={deleteDuplicateEntry}
+                  />
+                ))}
+              </div>
+            )}
+
             {hasActiveFilter && (
               <div className="mb-3 flex flex-wrap items-center gap-6 rounded-lg border border-accent bg-accent-light px-4 py-3">
                 <div>
@@ -1240,6 +1318,68 @@ function MetricCard({ label, value, over }: { label: string; value: number; over
     <div className="rounded-xl border border-border bg-card px-4 py-3">
       <p className="text-xs uppercase tracking-wide text-muted">{label}</p>
       <p className={`money text-xl ${over ? "text-rust" : "text-ink"}`}>{formatBRL(value)}</p>
+    </div>
+  );
+}
+
+const DUPLICATE_REASON_LABELS: Record<DuplicateReason, string> = {
+  mesma_categoria_valor_identico: "Mesma categoria e valor idêntico",
+  descricao_parecida: "Descrição parecida, valor e data próximos",
+};
+
+function DuplicatePairCard({
+  pair,
+  onIgnore,
+  onDelete,
+}: {
+  pair: DuplicateCandidate;
+  onIgnore: () => void;
+  onDelete: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border-strong bg-card p-3">
+      <div className="flex flex-wrap gap-1">
+        {pair.reasons.map((r) => (
+          <span
+            key={r}
+            className="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide"
+            style={{ background: "var(--row-blue-bg)", color: "var(--row-blue-text)" }}
+          >
+            {DUPLICATE_REASON_LABELS[r]}
+          </span>
+        ))}
+      </div>
+      {[pair.entryA, pair.entryB].map((entry) => (
+        <div
+          key={entry.id}
+          className="flex flex-wrap items-center justify-between gap-2 rounded border border-border px-2 py-1.5 text-sm"
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="shrink-0 text-xs text-muted">
+              {entry.entry_date.slice(0, 10).split("-").reverse().join("/")}
+            </span>
+            <span className="truncate text-ink">{entry.description}</span>
+            <span className="shrink-0 text-xs text-muted">{entry.category_name ?? "Aguardando Revisão"}</span>
+            <span className="shrink-0 text-xs text-muted">{entry.payment_source_name ?? "—"}</span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="money text-ink">{formatBRL(Number(entry.amount))}</span>
+            <button
+              type="button"
+              onClick={() => onDelete(entry.id)}
+              title="Excluir este lançamento"
+              className="min-h-8 min-w-8 rounded px-2 text-rust"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ))}
+      <div>
+        <button type="button" onClick={onIgnore} className="min-h-8 rounded-lg px-2 text-xs text-muted underline">
+          Ignorar (não é duplicado)
+        </button>
+      </div>
     </div>
   );
 }

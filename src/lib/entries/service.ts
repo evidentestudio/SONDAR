@@ -2,6 +2,7 @@ import { dbForHousehold } from "@/lib/db";
 import { monthToDbDate, nextMonthKey } from "@/lib/date";
 import { ensureAwaitingReviewCategory, isLeafCategory } from "@/lib/categories/service";
 import { getLedgerById } from "@/lib/ledgers/service";
+import { normalizeStr, fuzzyMatch } from "@/lib/text/normalize";
 
 export type EntryType = "expense" | "income";
 
@@ -435,6 +436,173 @@ export async function checkPossibleDuplicate(
     [householdId, categoryId, amount, entryDate, excludeEntryId ?? null],
   );
   return rows.length > 0;
+}
+
+export type DuplicateReason = "mesma_categoria_valor_identico" | "descricao_parecida";
+
+export type DuplicateCandidate = {
+  entryA: EntryRow;
+  entryB: EntryRow;
+  reasons: DuplicateReason[];
+};
+
+/** Mesma janela/tolerância já usada por findReconciliationCandidate — reaproveita
+ * o mesmo critério de "parecido o bastante" em vez de inventar um novo. */
+const SIMILAR_DATE_WINDOW_DAYS = 3;
+const SIMILAR_AMOUNT_TOLERANCE = 0.2;
+
+function sameInstallmentOrSplit(a: EntryRow, b: EntryRow): boolean {
+  if (a.installment_plan_id && a.installment_plan_id === b.installment_plan_id) return true;
+  if (a.split_group_id && a.split_group_id === b.split_group_id) return true;
+  return false;
+}
+
+/**
+ * Buscador de lançamentos duplicados (pedido fora do roteiro sequenciado,
+ * 2026-10-19) — varre TODOS os meses de um orçamento (não só o mês aberto na
+ * tela) atrás de pares suspeitos, por dois critérios independentes (um par
+ * pode bater nos dois):
+ *
+ * (a) "mesma_categoria_valor_identico": mesma categoria + mesmo tipo + valor
+ *     idêntico (até o centavo) + mesmo mês — mesmo critério de
+ *     checkPossibleDuplicate, mas achando TODOS os pares existentes em vez
+ *     de só checar um lançamento novo contra os demais.
+ * (b) "descricao_parecida": descrição parecida (normalizeStr/fuzzyMatch, já
+ *     usado pra regras de estabelecimento) + valor dentro de ±20% + data
+ *     dentro de 3 dias — mesma tolerância de findReconciliationCandidate.
+ *
+ * Nunca junta parcelas diferentes da mesma compra (mesmo installment_plan_id)
+ * nem partes da mesma divisão (mesmo split_group_id) — essas são sempre
+ * lançamentos distintos por natureza, não duplicidade.
+ *
+ * Puramente sob demanda (botão), nunca automático — mesma filosofia do Radar
+ * Financeiro, pra não gerar custo/ruído toda vez que a tela carrega. Pares já
+ * marcados como "Ignorar" (duplicate_dismissals) nunca reaparecem.
+ */
+export async function findDuplicateCandidates(
+  householdId: string,
+  ledgerId: string,
+): Promise<DuplicateCandidate[]> {
+  const { rows } = await dbForHousehold<EntryRow>(
+    householdId,
+    `SELECT
+       e.id, e.household_id, e.ledger_id, e.entry_type, e.entry_date, e.description, e.amount,
+       e.category_id, c.name AS category_name, c.category_type AS category_type,
+       e.payment_source_id, ps.name AS payment_source_name,
+       e.review_status, e.input_method, e.amount_confidence, e.created_at,
+       e.installment_plan_id, e.installment_number, ip.total_installments,
+       e.audio_confirmed_at, e.split_group_id
+     FROM financial_entries e
+     LEFT JOIN categories c ON c.id = e.category_id
+     LEFT JOIN payment_sources ps ON ps.id = e.payment_source_id
+     LEFT JOIN installment_plans ip ON ip.id = e.installment_plan_id
+     WHERE e.household_id = $1 AND e.ledger_id = $2 AND e.deleted_at IS NULL
+     ORDER BY e.entry_date DESC, e.created_at DESC`,
+    [householdId, ledgerId],
+  );
+  if (rows.length < 2) return [];
+
+  const { rows: dismissedRows } = await dbForHousehold<{ entry_id_a: string; entry_id_b: string }>(
+    householdId,
+    `SELECT entry_id_a, entry_id_b FROM duplicate_dismissals WHERE household_id = $1`,
+    [householdId],
+  );
+  const dismissed = new Set(dismissedRows.map((d) => `${d.entry_id_a}:${d.entry_id_b}`));
+  function isDismissed(a: EntryRow, b: EntryRow): boolean {
+    const [idA, idB] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+    return dismissed.has(`${idA}:${idB}`);
+  }
+
+  const pairs = new Map<string, DuplicateCandidate>();
+  function addReason(a: EntryRow, b: EntryRow, reason: DuplicateReason) {
+    const [first, second] = a.id < b.id ? [a, b] : [b, a];
+    const key = `${first.id}:${second.id}`;
+    const existing = pairs.get(key);
+    if (existing) {
+      if (!existing.reasons.includes(reason)) existing.reasons.push(reason);
+    } else {
+      pairs.set(key, { entryA: first, entryB: second, reasons: [reason] });
+    }
+  }
+
+  // Critério (a) — agrupado por bucket (tipo+categoria+mês+centavos) em vez
+  // de comparar todo mundo com todo mundo, já que households com muitos
+  // lançamentos acumulados ao longo dos anos não devem virar O(n²) de verdade.
+  const exactBuckets = new Map<string, EntryRow[]>();
+  for (const e of rows) {
+    const monthKey = e.entry_date.slice(0, 7);
+    const cents = Math.round(Number(e.amount) * 100);
+    const key = `${e.entry_type}|${e.category_id ?? "none"}|${monthKey}|${cents}`;
+    const bucket = exactBuckets.get(key);
+    if (bucket) bucket.push(e);
+    else exactBuckets.set(key, [e]);
+  }
+  for (const bucket of exactBuckets.values()) {
+    if (bucket.length < 2) continue;
+    for (let i = 0; i < bucket.length; i++) {
+      for (let j = i + 1; j < bucket.length; j++) {
+        const a = bucket[i];
+        const b = bucket[j];
+        if (sameInstallmentOrSplit(a, b) || isDismissed(a, b)) continue;
+        addReason(a, b, "mesma_categoria_valor_identico");
+      }
+    }
+  }
+
+  // Critério (b) — rows já vem ordenado por entry_date DESC; a janela de
+  // dias permite parar o loop interno assim que a distância de datas passa
+  // do limite, em vez de comparar com o resto da lista inteira.
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i];
+      const b = rows[j];
+      const dayDiff = Math.abs(
+        (new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime()) / 86_400_000,
+      );
+      if (dayDiff > SIMILAR_DATE_WINDOW_DAYS) break;
+      if (a.entry_type !== b.entry_type) continue;
+      if (sameInstallmentOrSplit(a, b) || isDismissed(a, b)) continue;
+      const amtA = Number(a.amount);
+      const amtB = Number(b.amount);
+      const maxAmt = Math.max(amtA, amtB);
+      if (maxAmt === 0 || Math.abs(amtA - amtB) / maxAmt > SIMILAR_AMOUNT_TOLERANCE) continue;
+      const normA = normalizeStr(a.description);
+      const normB = normalizeStr(b.description);
+      if (normA && normB && (normA === normB || fuzzyMatch(normA, normB) || fuzzyMatch(normB, normA))) {
+        addReason(a, b, "descricao_parecida");
+      }
+    }
+  }
+
+  return Array.from(pairs.values()).sort((x, y) => {
+    const dx = Math.max(
+      new Date(x.entryA.entry_date).getTime(),
+      new Date(x.entryB.entry_date).getTime(),
+    );
+    const dy = Math.max(
+      new Date(y.entryA.entry_date).getTime(),
+      new Date(y.entryB.entry_date).getTime(),
+    );
+    return dy - dx;
+  });
+}
+
+/** Marca um par como "não é duplicado" — nunca mais reaparece em
+ * findDuplicateCandidates. Ordem canônica (menor id primeiro) garante que o
+ * mesmo par nunca gera duas linhas diferentes. */
+export async function dismissDuplicatePair(
+  householdId: string,
+  entryIdA: string,
+  entryIdB: string,
+): Promise<void> {
+  const [idA, idB] = entryIdA < entryIdB ? [entryIdA, entryIdB] : [entryIdB, entryIdA];
+  await dbForHousehold(
+    householdId,
+    `INSERT INTO duplicate_dismissals (household_id, entry_id_a, entry_id_b)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (entry_id_a, entry_id_b) DO NOTHING`,
+    [householdId, idA, idB],
+  );
 }
 
 export type SplitPart = { categoryId: string | null; amount: number };
